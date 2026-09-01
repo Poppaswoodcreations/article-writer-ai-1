@@ -1,0 +1,147 @@
+{
+  "design_system": {
+    "identity": {
+      "name": "E1_Article_Writer",
+      "persona": "The Anti-AI Designer",
+      "vibe": "Editorial Precision meets Digital Fluidity",
+      "principles": [
+        "Fusion: Editorial Serif elegance mixed with SaaS functional density",
+        "Emotion: Writing is intimate; the UI must feel calm and focused (Zen Mode)",
+        "Content is King: The article editor is the stage; everything else is backstage",
+        "Negative Space: Massive margins in the editor to simulate a printed page"
+      ]
+    },
+    "typography": {
+      "font_family": {
+        "headings": "Playfair Display, serif",
+        "body": "Manrope, sans-serif",
+        "editor": "Merriweather, serif",
+        "mono": "JetBrains Mono, monospace"
+      },
+      "scale": {
+        "h1": "text-5xl md:text-7xl font-medium tracking-tight leading-[1.1]",
+        "h2": "text-3xl md:text-5xl font-normal tracking-tight",
+        "h3": "text-2xl md:text-3xl font-normal",
+        "body_lg": "text-lg md:text-xl leading-relaxed",
+        "body_base": "text-base leading-relaxed",
+        "caption": "text-xs tracking-widest uppercase font-semibold text-muted-foreground"
+      },
+      "imports": [
+        "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Manrope:wght@200..800&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&family=JetBrains+Mono:wght@400;500&display=swap"
+      ]
+    },
+    "colors": {
+      "palette": {
+        "mode": "light",
+        "background": "#FAFAF9",
+        "foreground": "#1C1917",
+        "card": "#FFFFFF",
+        "card_foreground": "#1C1917",
+        "primary": "#1C1917",
+        "primary_foreground": "#FAFAF9",
+        "secondary": "#E7E5E4",
+        "secondary_foreground": "#1C1917",
+        "muted": "#F5F5F4",
+        "muted_foreground": "#78716C",
+        "accent": "#F59E0B",
+        "accent_foreground": "#FFFFFF",
+        "destructive": "#EF4444",
+        "border": "#E7E5E4",
+        "input": "#E7E5E4",
+        "ring": "#1C1917"
+      },
+      "usage": {
+        "brand_accent": "Use #F59E0B (Amber-500) sparingly for 'Magic/AI' moments only.",
+        "text_primary": "#1C1917 (Stone-900) - Soft Black, never pure black.",
+        "surface_subtle": "#FAFAF9 (Stone-50) - Warm paper feel.",
+        "editor_bg": "#FFFFFF (Pure White) - Distinct from the dashboard background."
+      }
+    },
+    "spacing": {
+      "container_padding": "p-6 md:p-12 lg:p-16",
+      "section_gap": "gap-12 md:gap-24",
+      "element_gap": "gap-4 md:gap-8",
+      "editor_width": "max-w-3xl mx-auto"
+    },
+    "visual_enhancers": {
+      "radius": "rounded-none",
+      "shadows": {
+        "card": "shadow-[0_2px_8px_rgba(0,0,0,0.04)]",
+        "float": "shadow-[0_12px_32px_rgba(0,0,0,0.08)]",
+        "inner": "inset 0 2px 4px 0 rgb(0 0 0 / 0.05)"
+      },
+      "borders": "border border-stone-200",
+      "glass": "bg-white/80 backdrop-blur-md border-b border-stone-200/50",
+      "textures": "Use a subtle noise texture on the main background (opacity 0.02) to mimic paper."
+    },
+    "layout_strategies": {
+      "dashboard": "Bento Grid (Mode B): Dense, data-rich, but with 'Stone' aesthetic. Sharp corners.",
+      "editor": "Zen Mode: Center column, distraction-free. Toolbar floats or sticks to top.",
+      "landing": "Asymmetric Editorial: Large serif typography, overlapping images, generous whitespace."
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-6 rounded-none font-medium tracking-wide transition-all duration-300",
+      "secondary": "bg-secondary text-secondary-foreground hover:bg-secondary/80 h-10 px-6 rounded-none font-medium transition-all duration-300",
+      "ghost": "hover:bg-stone-100 hover:text-stone-900 h-10 px-4 rounded-none transition-all duration-300",
+      "ai_magic": "bg-amber-500 text-white hover:bg-amber-600 shadow-lg hover:shadow-amber-500/25 transition-all duration-300 rounded-none flex items-center gap-2"
+    },
+    "cards": {
+      "base": "bg-card text-card-foreground border border-border shadow-sm rounded-none p-6 hover:border-stone-400 transition-colors duration-300",
+      "interactive": "cursor-pointer hover:-translate-y-1 hover:shadow-md transition-all duration-300"
+    },
+    "inputs": {
+      "base": "flex h-10 w-full rounded-none border border-input bg-transparent px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+    },
+    "navigation": {
+      "sidebar": "w-64 border-r border-border bg-stone-50/50 h-screen sticky top-0 hidden md:flex flex-col p-6",
+      "mobile_nav": "md:hidden fixed bottom-0 left-0 right-0 border-t bg-white p-4 flex justify-around z-50"
+    }
+  },
+  "assets": {
+    "images": {
+      "hero_workspace": {
+        "url": "https://images.unsplash.com/photo-1755436612165-56c6bfa5218b?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Minimalist writer workspace with natural light",
+        "usage": "Landing page hero section, right side or background with overlay"
+      },
+      "ai_visualization": {
+        "url": "https://images.unsplash.com/photo-1762279389053-d5a30239ae45?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Abstract neon lines representing AI processing",
+        "usage": "Background for 'Generating...' loading states or AI feature highlights"
+      },
+      "creative_detail": {
+        "url": "https://images.unsplash.com/photo-1537655949728-d4e1c7c7bf90?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Close up of macbook and camera lens",
+        "usage": "Feature section detail image"
+      }
+    },
+    "icons": {
+      "library": "lucide-react",
+      "style": "Stroke width 1.5px, refined and thin."
+    }
+  },
+  "motion": {
+    "transitions": "transition-all duration-300 ease-out",
+    "hover_effects": "hover:opacity-80",
+    "loading": "Use a skeleton loader with a 'shimmer' effect (bg-stone-200) instead of spinners where possible.",
+    "page_transition": "initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}"
+  },
+  "accessibility": {
+    "contrast": "Ensure text is #1C1917 on #FAFAF9 or #FFFFFF. Use #78716C for secondary text, not lighter.",
+    "focus_states": "focus-visible:ring-2 focus-visible:ring-stone-900 focus-visible:ring-offset-2",
+    "aria": "All interactive elements must have aria-labels if no text is present."
+  },
+  "universal_guidelines": [
+    "Do NOT use gradients for backgrounds. Use solid warm greys or white.",
+    "Do NOT use rounded corners > 4px. Prefer sharp (0px) or very subtle (2px) for this 'Editorial' look.",
+    "Center the Article Editor content, but keep the Dashboard full-width with padding.",
+    "Use 'Playfair Display' for all H1, H2, H3. Use 'Manrope' for UI text. Use 'Merriweather' for the actual article content area.",
+    "Always add data-testid to interactive elements.",
+    "Use 'sonner' for toast notifications.",
+    "Never use generic AI emojis. Use Lucide icons.",
+    "If a user asks for a 'Save' button, place it in a sticky header in the editor."
+  ],
+  "instructions_to_main_agent": "You are building a SaaS for writers. The aesthetic is 'The New York Times meets Linear'. It should feel prestigious, not like a cheap tool. Use the provided image URLs for the landing page. Implement the 'Zen Mode' editor with high priority - it should feel like a clean sheet of paper."
+}

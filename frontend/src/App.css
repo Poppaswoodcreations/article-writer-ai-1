@@ -1,0 +1,77 @@
+/* Editor Styles */
+.editor-content {
+  font-family: 'Merriweather', serif;
+  line-height: 1.8;
+  color: #1C1917;
+}
+
+.editor-content h1,
+.editor-content h2,
+.editor-content h3 {
+  font-family: 'Playfair Display', serif;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+}
+
+.editor-content p {
+  margin-bottom: 1rem;
+}
+
+/* Shimmer loading effect */
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.shimmer {
+  animation: shimmer 2s infinite linear;
+  background: linear-gradient(
+    to right,
+    #F5F5F4 0%,
+    #E7E5E4 20%,
+    #F5F5F4 40%,
+    #F5F5F4 100%
+  );
+  background-size: 1000px 100%;
+}
+
+/* Smooth transitions */
+.transition-all {
+  transition: all 0.3s ease-out;
+}
+
+/* Focus states */
+.focus-ring:focus-visible {
+  outline: none;
+  ring: 2px;
+  ring-color: #1C1917;
+  ring-offset: 2px;
+}
+
+/* Hover effects */
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F5F5F4;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D6D3D1;
+  border-radius: 0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #A8A29E;
+}
