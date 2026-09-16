@@ -27,11 +27,16 @@ Research and create GEO-optimized, top-ranking articles with Meta Title, Meta De
 
 - 2026-06: Code-review refactor: backend helpers (build_article_prompt, regex parse_article_response, insert_timestamped, storage_call, build_campaign_prompt, campaign_from_response, CAMPAIGN_EXPORTERS); frontend split into ExportDialog, ImageUploadDialog, SeoFields, PostCard, PlatformPicker, HowItWorks; ReferenceInputs → UrlList + ImageUploader (dup URL guard, stable keys); fixed email leaking into platforms list
 
+- 2026-06: Drag-and-drop/paste images into article textarea (`useImageInsert` hook, inserts markdown at cursor)
+- 2026-06: Campaign Graphics — PIL headline overlay per platform size (`graphics.py`, bundled LiberationSans-Bold), optional AI enhance via Gemini `gemini-3.1-flash-image-preview`; POST /api/campaigns/{id}/posts/{platform}/graphic; stored in object storage under `article-writer/graphics/`
+- 2026-06: Post Scheduler — `scheduled_at` per post, SchedulePicker (calendar+time), SchedulePanel, GET /api/campaigns/{id}/schedule/{csv|ics}
+- 2026-06: Regenerate One Post — POST /api/campaigns/{id}/posts/{platform}/regenerate {instruction}
+
 ## Backlog
-- P1: Drag-and-drop / paste images directly into editor
+- P2: Bulk "Generate all graphics" for a campaign
 - P2: Rich-text (WYSIWYG) editor, PDF/DOCX export
-- P2: Campaign scheduling / calendar view, regenerate a single post
+- P2: Month calendar view across all campaigns
 - P2: Client-side error boundary on dashboard
 
 ## Testing
-- Reports: /app/test_reports/iteration_1..5.json (all passing)
+- Reports: /app/test_reports/iteration_1..6.json (all passing)
