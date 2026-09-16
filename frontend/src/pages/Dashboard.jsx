@@ -51,7 +51,7 @@ const ArticleCard = ({ article, onDelete, navigate }) => (
       <p className="text-sm text-muted-foreground line-clamp-3 mb-4">{article.meta_description}</p>
       {article.keywords && (
         <div className="flex flex-wrap gap-2 mb-4">
-          {article.keywords.split(',').slice(0, 3).map((k, i) => <span key={i} className="text-xs px-2 py-1 bg-secondary text-secondary-foreground">{k.trim()}</span>)}
+          {article.keywords.split(',').slice(0, 3).map((k) => <span key={k} className="text-xs px-2 py-1 bg-secondary text-secondary-foreground">{k.trim()}</span>)}
         </div>
       )}
     </div>

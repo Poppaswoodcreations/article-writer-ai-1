@@ -210,23 +210,7 @@ class Campaign(BaseModel):
 async def root():
     return {"message": "AI-Powered Article Writer API"}
 
-@api_router.post("/articles/generate", response_model=GenerateResponse)
-async def generate_article(input_data: ArticleCreate, request: Request):
-    try:
-        chat = new_chat("You are an expert SEO content writer who creates high-quality, engaging articles optimized for search engines and AI answer engines (GEO).")
-        research = await build_research_block(input_data.reference_urls)
-        images = await build_image_contents(input_data.image_paths)
-        image_note = image_instruction(input_data.image_paths, public_base_url(request))
-        if input_data.image_paths:
-            image_note += "\n\nIn ARTICLE_CONTENT, insert each image exactly once where it fits best using markdown: ![descriptive alt text](IMAGE URL). Alt text must describe the actual image content for SEO."
-
-        # Create research and generation prompt
-        keywords_text = f" focusing on keywords: {input_data.keywords}" if input_data.keywords else ""
-        prompt = f"""Create a comprehensive, SEO-optimized article about: {input_data.topic}{keywords_text}
-
-Tone: {input_data.tone}{research}{image_note}
-
-Provide the following in a structured format:
+ARTICLE_FORMAT = """Provide the following in a structured format:
 1. ARTICLE_TITLE: A compelling, SEO-friendly title (60-70 characters)
 2. ARTICLE_CONTENT: A well-structured, engaging article (1500-2000 words) with:
    - Clear introduction
@@ -254,103 +238,57 @@ META_DESCRIPTION:
 
 URL_SLUG:
 [url-slug-here]"""
-        
-        user_message = UserMessage(text=prompt, file_contents=images)
-        response = await chat.send_message(user_message)
-        
-        # Parse the response
+
+ARTICLE_SECTIONS = {"ARTICLE_TITLE": "title", "ARTICLE_CONTENT": "content", "META_TITLE": "meta_title",
+                    "META_DESCRIPTION": "meta_description", "URL_SLUG": "url_slug"}
+
+def build_article_prompt(input_data: ArticleCreate, research: str, image_note: str) -> str:
+    keywords_text = f" focusing on keywords: {input_data.keywords}" if input_data.keywords else ""
+    if input_data.image_paths:
+        image_note += "\n\nIn ARTICLE_CONTENT, insert each image exactly once where it fits best using markdown: ![descriptive alt text](IMAGE URL). Alt text must describe the actual image content for SEO."
+    return f"Create a comprehensive, SEO-optimized article about: {input_data.topic}{keywords_text}\n\nTone: {input_data.tone}{research}{image_note}\n\n{ARTICLE_FORMAT}"
+
+def slugify(text: str, fallback: str = "article") -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:50] or fallback
+
+def parse_article_response(response: str, topic: str, keywords: Optional[str]) -> dict:
+    result = {"topic": topic, "keywords": keywords}
+    pattern = "|".join(ARTICLE_SECTIONS)
+    for match in re.finditer(rf"^\s*({pattern}):\s*(.*?)(?=^\s*(?:{pattern}):|\Z)", response, re.M | re.S):
+        result[ARTICLE_SECTIONS[match.group(1)]] = match.group(2).strip()
+    title = result.get("title") or f"Article: {topic}"
+    return {
+        **result,
+        "title": title,
+        "content": result.get("content") or response,
+        "meta_title": result.get("meta_title") or title[:60],
+        "meta_description": result.get("meta_description") or f"Comprehensive guide about {topic}"[:160],
+        "url_slug": result.get("url_slug") or slugify(topic),
+    }
+
+async def insert_timestamped(collection, model: BaseModel) -> None:
+    doc = model.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    doc["updated_at"] = doc["updated_at"].isoformat()
+    await collection.insert_one(doc)
+
+@api_router.post("/articles/generate", response_model=GenerateResponse)
+async def generate_article(input_data: ArticleCreate, request: Request):
+    try:
+        chat = new_chat("You are an expert SEO content writer who creates high-quality, engaging articles optimized for search engines and AI answer engines (GEO).")
+        research = await build_research_block(input_data.reference_urls)
+        images = await build_image_contents(input_data.image_paths)
+        image_note = image_instruction(input_data.image_paths, public_base_url(request))
+        prompt = build_article_prompt(input_data, research, image_note)
+        response = await chat.send_message(UserMessage(text=prompt, file_contents=images))
+
         article_data = parse_article_response(response, input_data.topic, input_data.keywords)
-        article_data['reference_urls'] = input_data.reference_urls
-        article_data['image_paths'] = input_data.image_paths
-        
-        # Save to database
-        article = Article(**article_data)
-        doc = article.model_dump()
-        doc['created_at'] = doc['created_at'].isoformat()
-        doc['updated_at'] = doc['updated_at'].isoformat()
-        
-        await db.articles.insert_one(doc)
-        
-        return GenerateResponse(
-            article_id=article.id,
-            message="Article generated successfully"
-        )
+        article = Article(**article_data, reference_urls=input_data.reference_urls, image_paths=input_data.image_paths)
+        await insert_timestamped(db.articles, article)
+        return GenerateResponse(article_id=article.id, message="Article generated successfully")
     except Exception as e:
         logging.error(f"Error generating article: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating article: {str(e)}")
-
-def parse_article_response(response: str, topic: str, keywords: Optional[str]) -> dict:
-    """Parse the AI response into structured article data"""
-    try:
-        # Extract sections from response
-        sections = {
-            'ARTICLE_TITLE:': 'title',
-            'ARTICLE_CONTENT:': 'content',
-            'META_TITLE:': 'meta_title',
-            'META_DESCRIPTION:': 'meta_description',
-            'URL_SLUG:': 'url_slug'
-        }
-        
-        result = {
-            'topic': topic,
-            'keywords': keywords,
-            'title': '',
-            'content': '',
-            'meta_title': '',
-            'meta_description': '',
-            'url_slug': ''
-        }
-        
-        lines = response.split('\n')
-        current_section = None
-        content_buffer = []
-        
-        for line in lines:
-            # Check if line starts a new section
-            section_found = False
-            for marker, field in sections.items():
-                if line.strip().startswith(marker):
-                    # Save previous section content
-                    if current_section and content_buffer:
-                        result[current_section] = '\n'.join(content_buffer).strip()
-                    # Start new section
-                    current_section = field
-                    content_buffer = [line.replace(marker, '').strip()]
-                    section_found = True
-                    break
-            
-            if not section_found and current_section:
-                content_buffer.append(line)
-        
-        # Save last section
-        if current_section and content_buffer:
-            result[current_section] = '\n'.join(content_buffer).strip()
-        
-        # Fallback if parsing fails
-        if not result['title']:
-            result['title'] = f"Article: {topic}"
-        if not result['content']:
-            result['content'] = response
-        if not result['meta_title']:
-            result['meta_title'] = result['title'][:60]
-        if not result['meta_description']:
-            result['meta_description'] = f"Comprehensive guide about {topic}"
-        if not result['url_slug']:
-            result['url_slug'] = topic.lower().replace(' ', '-')[:50]
-        
-        return result
-    except Exception as e:
-        logging.error(f"Error parsing article response: {str(e)}")
-        # Return basic structure with the response
-        return {
-            'topic': topic,
-            'keywords': keywords,
-            'title': f"Article: {topic}",
-            'content': response,
-            'meta_title': f"Article: {topic}"[:60],
-            'meta_description': f"Comprehensive guide about {topic}"[:160],
-            'url_slug': topic.lower().replace(' ', '-')[:50]
-        }
 
 @api_router.get("/articles", response_model=List[Article])
 async def get_articles():
@@ -418,6 +356,13 @@ async def delete_article(article_id: str):
     
     return {"message": "Article deleted successfully"}
 
+async def storage_call(fn, *args, error: str, status: int):
+    try:
+        return await asyncio.to_thread(fn, *args)
+    except Exception as e:
+        logging.error(f"{error}: {str(e)}")
+        raise HTTPException(status_code=status, detail=error)
+
 @api_router.post("/upload-image")
 async def upload_image(file: UploadFile = File(...)):
     allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"]
@@ -430,11 +375,7 @@ async def upload_image(file: UploadFile = File(...)):
 
     ext = file.filename.split('.')[-1].lower() if '.' in file.filename else "bin"
     path = f"{APP_NAME}/uploads/{uuid.uuid4()}.{ext}"
-    try:
-        result = await asyncio.to_thread(put_object, path, data, file.content_type)
-    except Exception as e:
-        logging.error(f"Error uploading image: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error uploading image")
+    result = await storage_call(put_object, path, data, file.content_type, error="Error uploading image", status=500)
 
     await db.files.insert_one({
         "id": str(uuid.uuid4()),
@@ -452,11 +393,7 @@ async def get_file(path: str):
     record = await db.files.find_one({"storage_path": path, "is_deleted": False})
     if not record:
         raise HTTPException(status_code=404, detail="File not found")
-    try:
-        data, content_type = await asyncio.to_thread(get_object, path)
-    except Exception as e:
-        logging.error(f"Error fetching file: {str(e)}")
-        raise HTTPException(status_code=404, detail="File not found")
+    data, content_type = await storage_call(get_object, path, error="File not found", status=404)
     return Response(content=data, media_type=record.get("content_type") or content_type,
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
@@ -468,17 +405,10 @@ PLATFORM_RULES = {
     "tiktok": "TikTok: a 30-45 second video script with [HOOK], [SCENE] beats and on-screen text cues, plus a caption under 150 characters, 4-6 hashtags.",
 }
 
-@api_router.post("/campaigns/generate")
-async def generate_campaign(input_data: CampaignCreate, request: Request):
-    platforms = [p for p in input_data.platforms if p in PLATFORMS] or PLATFORMS
-    try:
-        chat = new_chat("You are a senior social media strategist and copywriter. You write platform-native, high-converting campaign content. You always answer with valid JSON only.")
-        research = await build_research_block(input_data.reference_urls)
-        images = await build_image_contents(input_data.image_paths)
-        image_note = image_instruction(input_data.image_paths, public_base_url(request))
-        rules = "\n".join(f"- {p}: {PLATFORM_RULES[p]}" for p in platforms)
-        email_rule = '\n  "email_copy": "a short promotional email (subject line on first line, then 120-180 words body)",' if input_data.include_email else ''
-        prompt = f"""Create a cohesive social media campaign.
+def build_campaign_prompt(input_data: CampaignCreate, platforms: List[str], research: str, image_note: str) -> str:
+    rules = "\n".join(f"- {p}: {PLATFORM_RULES[p]}" for p in platforms)
+    email_rule = '\n  "email_copy": "a short promotional email (subject line on first line, then 120-180 words body)",' if input_data.include_email else ''
+    return f"""Create a cohesive social media campaign.
 
 TOPIC / PRODUCT: {input_data.topic}
 GOAL / CALL TO ACTION: {input_data.goal or 'raise awareness and drive engagement'}
@@ -497,19 +427,28 @@ Respond ONLY with JSON in this exact shape:
 }}
 Include exactly these platforms in order: {", ".join(platforms)}. Do not put hashtags inside content; put them in the hashtags field."""
 
+def campaign_from_response(response: str, input_data: CampaignCreate, platforms: List[str]) -> Campaign:
+    data = parse_json_block(response)
+    posts = [CampaignPost(platform=p.get("platform", ""), content=p.get("content", ""), hashtags=p.get("hashtags", "")) for p in data.get("posts", [])]
+    return Campaign(
+        name=data.get("name") or f"Campaign: {input_data.topic}",
+        topic=input_data.topic, goal=input_data.goal, keywords=input_data.keywords, tone=input_data.tone,
+        platforms=platforms, posts=posts, email_copy=data.get("email_copy") or "",
+        reference_urls=input_data.reference_urls, image_paths=input_data.image_paths,
+    )
+
+@api_router.post("/campaigns/generate")
+async def generate_campaign(input_data: CampaignCreate, request: Request):
+    platforms = [p for p in input_data.platforms if p in PLATFORMS] or PLATFORMS
+    try:
+        chat = new_chat("You are a senior social media strategist and copywriter. You write platform-native, high-converting campaign content. You always answer with valid JSON only.")
+        research = await build_research_block(input_data.reference_urls)
+        images = await build_image_contents(input_data.image_paths)
+        image_note = image_instruction(input_data.image_paths, public_base_url(request))
+        prompt = build_campaign_prompt(input_data, platforms, research, image_note)
         response = await chat.send_message(UserMessage(text=prompt, file_contents=images))
-        data = parse_json_block(response)
-        posts = [CampaignPost(platform=p.get("platform", ""), content=p.get("content", ""), hashtags=p.get("hashtags", "")) for p in data.get("posts", [])]
-        campaign = Campaign(
-            name=data.get("name") or f"Campaign: {input_data.topic}",
-            topic=input_data.topic, goal=input_data.goal, keywords=input_data.keywords, tone=input_data.tone,
-            platforms=platforms, posts=posts, email_copy=data.get("email_copy", "") or "",
-            reference_urls=input_data.reference_urls, image_paths=input_data.image_paths,
-        )
-        doc = campaign.model_dump()
-        doc['created_at'] = doc['created_at'].isoformat()
-        doc['updated_at'] = doc['updated_at'].isoformat()
-        await db.campaigns.insert_one(doc)
+        campaign = campaign_from_response(response, input_data, platforms)
+        await insert_timestamped(db.campaigns, campaign)
         return {"campaign_id": campaign.id, "message": "Campaign generated successfully"}
     except Exception as e:
         logging.error(f"Error generating campaign: {str(e)}")
@@ -545,26 +484,33 @@ async def delete_campaign(campaign_id: str):
         raise HTTPException(status_code=404, detail="Campaign not found")
     return {"message": "Campaign deleted successfully"}
 
+def campaign_markdown(c: dict) -> str:
+    body = "\n\n".join(f"## {p['platform'].title()}\n\n{p['content']}\n\n{p['hashtags']}" for p in c['posts'])
+    email = f"\n\n## Email\n\n{c['email_copy']}" if c.get('email_copy') else ""
+    return f"# {c['name']}\n\n**Topic:** {c['topic']}\n\n{body}{email}"
+
+def campaign_txt(c: dict) -> str:
+    body = "\n\n".join(f"=== {p['platform'].upper()} ===\n{p['content']}\n{p['hashtags']}" for p in c['posts'])
+    email = f"\n\n=== EMAIL ===\n{c['email_copy']}" if c.get('email_copy') else ""
+    return f"{c['name']}\n\n{body}{email}"
+
+def campaign_html(c: dict) -> str:
+    br = lambda s: s.replace(chr(10), '<br>')
+    posts = "".join(f"<section><h2>{p['platform'].title()}</h2><p>{br(p['content'])}</p><p><em>{p['hashtags']}</em></p></section>" for p in c['posts'])
+    email = f"<section><h2>Email</h2><p>{br(c['email_copy'])}</p></section>" if c.get('email_copy') else ""
+    return f"<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>{c['name']}</title></head><body><h1>{c['name']}</h1>{posts}{email}</body></html>"
+
+CAMPAIGN_EXPORTERS = {"markdown": (campaign_markdown, "md"), "txt": (campaign_txt, "txt"), "html": (campaign_html, "html")}
+
 @api_router.get("/campaigns/{campaign_id}/export/{format}")
 async def export_campaign(campaign_id: str, format: str):
     c = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
     if not c:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    slug = re.sub(r"[^a-z0-9]+", "-", c['name'].lower()).strip("-")[:50] or "campaign"
-    if format == "markdown":
-        body = "\n\n".join(f"## {p['platform'].title()}\n\n{p['content']}\n\n{p['hashtags']}" for p in c['posts'])
-        email = f"\n\n## Email\n\n{c['email_copy']}" if c.get('email_copy') else ""
-        return {"format": "markdown", "content": f"# {c['name']}\n\n**Topic:** {c['topic']}\n\n{body}{email}", "filename": f"{slug}.md"}
-    if format == "txt":
-        body = "\n\n".join(f"=== {p['platform'].upper()} ===\n{p['content']}\n{p['hashtags']}" for p in c['posts'])
-        email = f"\n\n=== EMAIL ===\n{c['email_copy']}" if c.get('email_copy') else ""
-        return {"format": "txt", "content": f"{c['name']}\n\n{body}{email}", "filename": f"{slug}.txt"}
-    if format == "html":
-        posts = "".join(f"<section><h2>{p['platform'].title()}</h2><p>{p['content'].replace(chr(10), '<br>')}</p><p><em>{p['hashtags']}</em></p></section>" for p in c['posts'])
-        email = f"<section><h2>Email</h2><p>{c['email_copy'].replace(chr(10), '<br>')}</p></section>" if c.get('email_copy') else ""
-        html = f"<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>{c['name']}</title></head><body><h1>{c['name']}</h1>{posts}{email}</body></html>"
-        return {"format": "html", "content": html, "filename": f"{slug}.html"}
-    raise HTTPException(status_code=400, detail="Unsupported format. Use 'markdown', 'txt' or 'html'")
+    if format not in CAMPAIGN_EXPORTERS:
+        raise HTTPException(status_code=400, detail="Unsupported format. Use 'markdown', 'txt' or 'html'")
+    render, ext = CAMPAIGN_EXPORTERS[format]
+    return {"format": format, "content": render(c), "filename": f"{slugify(c['name'], 'campaign')}.{ext}"}
 
 @api_router.get("/articles/{article_id}/export/{format}")
 async def export_article(article_id: str, format: str):

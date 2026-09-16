@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { ArrowLeft, Sparkles, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ReferenceInputs } from '@/components/ReferenceInputs';
+import { HowItWorks } from '@/components/HowItWorks';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -168,39 +169,7 @@ const ArticleGenerator = () => {
             </form>
           </Card>
 
-          {/* Info Section */}
-          <div className="mt-12 space-y-6">
-            <h2 className="text-2xl font-normal text-foreground">How It Works</h2>
-            <div className="grid md:grid-cols-3 gap-6">
-              <div className="bg-card border border-border p-6 rounded-none">
-                <div className="w-12 h-12 bg-accent/10 flex items-center justify-center mb-4">
-                  <span className="text-2xl font-medium text-accent">1</span>
-                </div>
-                <h3 className="text-lg font-medium mb-2">Enter Topic</h3>
-                <p className="text-sm text-muted-foreground">
-                  Provide your article topic and optional keywords for SEO focus
-                </p>
-              </div>
-              <div className="bg-card border border-border p-6 rounded-none">
-                <div className="w-12 h-12 bg-accent/10 flex items-center justify-center mb-4">
-                  <span className="text-2xl font-medium text-accent">2</span>
-                </div>
-                <h3 className="text-lg font-medium mb-2">AI Generation</h3>
-                <p className="text-sm text-muted-foreground">
-                  Claude Sonnet creates a comprehensive, SEO-optimized article from your topic, URLs and images
-                </p>
-              </div>
-              <div className="bg-card border border-border p-6 rounded-none">
-                <div className="w-12 h-12 bg-accent/10 flex items-center justify-center mb-4">
-                  <span className="text-2xl font-medium text-accent">3</span>
-                </div>
-                <h3 className="text-lg font-medium mb-2">Edit & Export</h3>
-                <p className="text-sm text-muted-foreground">
-                  Review, edit, and export your article in multiple formats
-                </p>
-              </div>
-            </div>
-          </div>
+          <HowItWorks />
         </div>
       </main>
     </div>

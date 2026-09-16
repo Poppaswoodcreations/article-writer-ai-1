@@ -5,16 +5,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { ArrowLeft, Megaphone, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ReferenceInputs } from '@/components/ReferenceInputs';
+import { PlatformPicker } from '@/components/PlatformPicker';
 import { PLATFORM_META } from '@/lib/platforms';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const ALL_PLATFORMS = Object.keys(PLATFORM_META);
+const ALL_PLATFORMS = Object.keys(PLATFORM_META).filter((p) => p !== 'email');
+const TONES = ['engaging', 'playful', 'professional', 'bold', 'inspirational', 'urgent'];
 
 const CampaignGenerator = () => {
   const navigate = useNavigate();
@@ -85,28 +86,14 @@ const CampaignGenerator = () => {
                 <Select value={form.tone} onValueChange={(v) => setForm({ ...form, tone: v })} disabled={generating}>
                   <SelectTrigger className="mt-2 h-12 rounded-none" data-testid="campaign-tone-select"><SelectValue /></SelectTrigger>
                   <SelectContent className="rounded-none">
-                    {['engaging', 'playful', 'professional', 'bold', 'inspirational', 'urgent'].map((t) => (
+                    {TONES.map((t) => (
                       <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div>
-                <Label className="text-base font-medium">Platforms</Label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3" data-testid="platform-checkboxes">
-                  {ALL_PLATFORMS.map((p) => (
-                    <label key={p} className={`flex items-center gap-3 border px-4 py-3 cursor-pointer transition-colors ${platforms.includes(p) ? 'border-accent bg-accent/5' : 'border-border hover:bg-stone-50'}`}>
-                      <Checkbox checked={platforms.includes(p)} onCheckedChange={() => togglePlatform(p)} disabled={generating} className="rounded-none" data-testid={`platform-checkbox-${p}`} />
-                      <span className="text-sm font-medium">{PLATFORM_META[p].label}</span>
-                    </label>
-                  ))}
-                  <label className={`flex items-center gap-3 border px-4 py-3 cursor-pointer transition-colors ${includeEmail ? 'border-accent bg-accent/5' : 'border-border hover:bg-stone-50'}`}>
-                    <Checkbox checked={includeEmail} onCheckedChange={(v) => setIncludeEmail(!!v)} disabled={generating} className="rounded-none" data-testid="platform-checkbox-email" />
-                    <span className="text-sm font-medium">Email blast</span>
-                  </label>
-                </div>
-              </div>
+              <PlatformPicker platforms={ALL_PLATFORMS} selected={platforms} onToggle={togglePlatform} includeEmail={includeEmail} onEmailChange={setIncludeEmail} disabled={generating} />
 
               <ReferenceInputs urls={urls} onUrlsChange={setUrls} images={images} onImagesChange={setImages} disabled={generating} />
 
