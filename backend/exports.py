@@ -149,8 +149,15 @@ def _register_fonts():
     pdfmetrics.registerFontFamily("Serif", normal="Serif", bold="Serif-Bold", italic="Serif-Italic", boldItalic="Serif-Bold")
 
 
+EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F900-\U0001F9FF\uFE0F\u200d]")
+
+
+def _strip_emoji(text: str) -> str:
+    return re.sub(r"  +", " ", EMOJI_RE.sub("", text)).strip()
+
+
 def _escape(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return _strip_emoji(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _inline_markup(text: str) -> str:
@@ -209,4 +216,110 @@ def build_pdf(article: dict, fetch_image: ImageFetcher) -> bytes:
     for label, key in (("Meta Title", "meta_title"), ("Meta Description", "meta_description"), ("URL Slug", "url_slug")):
         story.append(Paragraph(f"<b>{label}:</b> {_escape(article.get(key, ''))}", styles["meta"]))
     doc.build(story)
+    return out.getvalue()
+
+
+PLATFORM_LABELS = {"facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn", "twitter": "X / Twitter", "tiktok": "TikTok"}
+PLATFORM_COLORS = {"facebook": "#1877F2", "instagram": "#E1306C", "linkedin": "#0A66C2", "twitter": "#111111", "tiktok": "#FE2C55"}
+
+
+def _deck_styles(accent: str) -> dict:
+    return {
+        "cover": ParagraphStyle("cover", fontName="Sans-Bold", fontSize=34, leading=40, textColor="#111111", spaceAfter=14),
+        "sub": ParagraphStyle("sub", fontName="Serif", fontSize=14, leading=20, textColor="#444444", spaceAfter=6),
+        "kicker": ParagraphStyle("kicker", fontName="Sans-Bold", fontSize=10, leading=13, textColor=accent, spaceAfter=4),
+        "h": ParagraphStyle("h", fontName="Sans-Bold", fontSize=22, leading=27, textColor="#111111", spaceAfter=10),
+        "body": ParagraphStyle("body", fontName="Serif", fontSize=11.5, leading=17, textColor="#222222", spaceAfter=8),
+        "tags": ParagraphStyle("tags", fontName="Serif-Italic", fontSize=10, leading=14, textColor="#555555"),
+        "small": ParagraphStyle("small", fontName="Serif", fontSize=9, leading=12, textColor="#777777"),
+    }
+
+
+def _fmt_when(iso: Optional[str]) -> str:
+    if not iso:
+        return "Not scheduled"
+    from datetime import datetime
+    return datetime.fromisoformat(iso.replace("Z", "+00:00")).strftime("%a %b %d, %Y · %H:%M UTC")
+
+
+def build_campaign_deck(campaign: dict, brand: dict, fetch_image: ImageFetcher) -> bytes:
+    from reportlab.lib.pagesizes import landscape
+    from reportlab.platypus import PageBreak, Table, TableStyle
+    from reportlab.lib import colors
+
+    _register_fonts()
+    accent = brand.get("accent_color") or "#F59E0B"
+    st = _deck_styles(accent)
+    page = landscape(A4)
+    out = io.BytesIO()
+    doc = SimpleDocTemplate(out, pagesize=page, leftMargin=0.8 * inch, rightMargin=0.8 * inch, topMargin=0.7 * inch, bottomMargin=0.7 * inch,
+                            title=f"{campaign['name']} — Campaign Deck", author=brand.get("name") or "Content Studio")
+    content_w = page[0] - 1.6 * inch
+    footer_text = " · ".join(filter(None, [brand.get("name"), brand.get("handle"), campaign["name"]]))
+
+    def on_page(canvas, _doc):
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor(accent))
+        canvas.rect(0, page[1] - 8, page[0], 8, stroke=0, fill=1)
+        canvas.setFont("Serif", 8)
+        canvas.setFillColor(colors.HexColor("#888888"))
+        canvas.drawString(0.8 * inch, 0.4 * inch, footer_text)
+        canvas.drawRightString(page[0] - 0.8 * inch, 0.4 * inch, f"Page {_doc.page}")
+        canvas.restoreState()
+
+    story = []
+    logo = fetch_image(f"/api/files/{brand['logo_path']}") if brand.get("logo_path") else None
+    if logo:
+        lw, lh = _scaled(logo, 1.6 * inch)
+        story += [RLImage(io.BytesIO(logo), width=lw, height=lh, hAlign="LEFT"), Spacer(1, 24)]
+    else:
+        story.append(Spacer(1, 60))
+    story += [Paragraph("CAMPAIGN DECK · FOR APPROVAL", st["kicker"]), Paragraph(_escape(campaign["name"]), st["cover"]),
+              Paragraph(f"<b>Topic:</b> {_escape(campaign['topic'])}", st["sub"])]
+    if campaign.get("goal"):
+        story.append(Paragraph(f"<b>Goal:</b> {_escape(campaign['goal'])}", st["sub"]))
+    scheduled = [p for p in campaign["posts"] if p.get("scheduled_at")]
+    story.append(Paragraph(f"{len(campaign['posts'])} posts · {len(scheduled)} scheduled" + (" · includes email" if campaign.get("email_copy") else ""), st["small"]))
+    story.append(PageBreak())
+
+    for post in campaign["posts"]:
+        label = PLATFORM_LABELS.get(post["platform"], post["platform"].title())
+        color = PLATFORM_COLORS.get(post["platform"], accent)
+        left = [Paragraph(f"<font color='{color}'>■</font> {label.upper()}", st["kicker"]), Paragraph(_escape(label + " post"), st["h"]),
+                Paragraph(_fmt_when(post.get("scheduled_at")), st["small"]), Spacer(1, 10)]
+        for para in post["content"].split("\n"):
+            left.append(Paragraph(_escape(para) or "&nbsp;", st["body"]))
+        if post.get("hashtags"):
+            left.append(Paragraph(_escape(post["hashtags"]), st["tags"]))
+        graphic = fetch_image(f"/api/files/{post['graphic_path']}") if post.get("graphic_path") else None
+        col_w = content_w * 0.46
+        if graphic:
+            gw, gh = _scaled(graphic, col_w)
+            max_h = page[1] - 2.2 * inch
+            if gh > max_h:
+                gw, gh = gw * max_h / gh, max_h
+            right = [RLImage(io.BytesIO(graphic), width=gw, height=gh)]
+        else:
+            right = [Paragraph("No graphic created yet", st["small"])]
+        table = Table([[left, right]], colWidths=[content_w - col_w - 12, col_w], hAlign="LEFT")
+        table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, 0), 12)]))
+        story += [table, PageBreak()]
+
+    if campaign.get("email_copy"):
+        story += [Paragraph("EMAIL", st["kicker"]), Paragraph("Email blast", st["h"]), Spacer(1, 8)]
+        for para in campaign["email_copy"].split("\n"):
+            story.append(Paragraph(_escape(para) or "&nbsp;", st["body"]))
+        story.append(PageBreak())
+
+    story += [Paragraph("SCHEDULE", st["kicker"]), Paragraph("Publishing schedule", st["h"]), Spacer(1, 8)]
+    rows = [["When", "Platform", "Post"]]
+    for p in sorted(campaign["posts"], key=lambda x: x.get("scheduled_at") or "9999"):
+        rows.append([Paragraph(_fmt_when(p.get("scheduled_at")), st["body"]), Paragraph(PLATFORM_LABELS.get(p["platform"], p["platform"]), st["body"]),
+                     Paragraph(_escape(p["content"][:140] + ("…" if len(p["content"]) > 140 else "")), st["body"])])
+    sched = Table(rows, colWidths=[content_w * 0.26, content_w * 0.16, content_w * 0.58], hAlign="LEFT", repeatRows=1)
+    sched.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, 0), "Sans-Bold"), ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#555555")),
+                               ("LINEBELOW", (0, 0), (-1, 0), 0.8, colors.HexColor(accent)), ("LINEBELOW", (0, 1), (-1, -1), 0.3, colors.HexColor("#DDDDDD")),
+                               ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    story.append(sched)
+    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return out.getvalue()

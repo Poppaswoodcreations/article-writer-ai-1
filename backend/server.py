@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 from bs4 import BeautifulSoup
 from graphics import render_graphic, ai_enhance
-from exports import build_docx, build_pdf
+from exports import build_docx, build_pdf, build_campaign_deck
 import asyncio
 import base64
 import csv
@@ -208,6 +208,7 @@ class CampaignCreate(BaseModel):
     include_email: bool = True
     reference_urls: List[str] = []
     image_paths: List[str] = []
+    source_article_id: Optional[str] = None
 
 class CampaignUpdate(BaseModel):
     name: Optional[str] = None
@@ -221,6 +222,7 @@ class Campaign(BaseModel):
     name: str
     topic: str
     goal: Optional[str] = None
+    source_article_id: Optional[str] = None
     keywords: Optional[str] = None
     tone: Optional[str] = None
     platforms: List[str] = []
@@ -431,6 +433,16 @@ PLATFORM_RULES = {
     "tiktok": "TikTok: a 30-45 second video script with [HOOK], [SCENE] beats and on-screen text cues, plus a caption under 150 characters, 4-6 hashtags.",
 }
 
+async def article_research_block(article_id: Optional[str]) -> str:
+    if not article_id:
+        return ""
+    article = await db.articles.find_one({"id": article_id}, {"_id": 0, "title": 1, "content": 1, "meta_description": 1, "url_slug": 1})
+    if not article:
+        return ""
+    body = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", article["content"])[:4000]
+    return (f"\n\nTHIS CAMPAIGN PROMOTES THE FOLLOWING ARTICLE. Every post should tease its key insights and drive readers to read it "
+            f"(refer to it as \"the article\" or use the placeholder [ARTICLE LINK]):\nTITLE: {article['title']}\nSUMMARY: {article.get('meta_description','')}\n\n{body}")
+
 def build_campaign_prompt(input_data: CampaignCreate, platforms: List[str], research: str, image_note: str) -> str:
     rules = "\n".join(f"- {p}: {PLATFORM_RULES[p]}" for p in platforms)
     email_rule = '\n  "email_copy": "a short promotional email (subject line on first line, then 120-180 words body)",' if input_data.include_email else ''
@@ -460,7 +472,7 @@ def campaign_from_response(response: str, input_data: CampaignCreate, platforms:
         name=data.get("name") or f"Campaign: {input_data.topic}",
         topic=input_data.topic, goal=input_data.goal, keywords=input_data.keywords, tone=input_data.tone,
         platforms=platforms, posts=posts, email_copy=data.get("email_copy") or "",
-        reference_urls=input_data.reference_urls, image_paths=input_data.image_paths,
+        reference_urls=input_data.reference_urls, image_paths=input_data.image_paths, source_article_id=input_data.source_article_id,
     )
 
 @api_router.post("/campaigns/generate")
@@ -469,6 +481,7 @@ async def generate_campaign(input_data: CampaignCreate, request: Request):
     try:
         chat = new_chat("You are a senior social media strategist and copywriter. You write platform-native, high-converting campaign content. You always answer with valid JSON only.")
         research = await build_research_block(input_data.reference_urls)
+        research += await article_research_block(input_data.source_article_id)
         images = await build_image_contents(input_data.image_paths)
         image_note = image_instruction(input_data.image_paths, public_base_url(request))
         prompt = build_campaign_prompt(input_data, platforms, research, image_note)
@@ -627,6 +640,18 @@ async def export_schedule(campaign_id: str, format: str):
     if format == "ics":
         return {"format": "ics", "content": schedule_ics(campaign), "filename": f"{slug}-schedule.ics"}
     raise HTTPException(status_code=400, detail="Unsupported format. Use 'csv' or 'ics'")
+
+@api_router.get("/campaigns/{campaign_id}/deck.pdf")
+async def download_campaign_deck(campaign_id: str):
+    campaign = await get_campaign_or_404(campaign_id)
+    brand = await load_brand_for_render() or {}
+    try:
+        data = await asyncio.to_thread(build_campaign_deck, campaign, brand, fetch_image_bytes)
+    except Exception as e:
+        logging.error(f"Error building deck: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error building deck")
+    filename = f"{slugify(campaign['name'], 'campaign')}-deck.pdf"
+    return StreamingResponse(io.BytesIO(data), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 @api_router.get("/campaigns/{campaign_id}/export/{format}")
 async def export_campaign(campaign_id: str, format: str):

@@ -1,6 +1,7 @@
 import base64
 import io
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -78,8 +79,12 @@ def _place_logo(base: Image.Image, logo_bytes: bytes, corner: str, margin: int) 
     base.paste(logo, (x, y), logo)
 
 
+EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\U00002600-\U000027BF\uFE0F\u200d]")
+
+
 def render_graphic(image_bytes: bytes, platform: str, headline: str, handle: Optional[str] = None, brand: Optional[dict] = None) -> bytes:
     brand = brand or {}
+    headline = re.sub(r"  +", " ", EMOJI_RE.sub("", headline))
     size = SIZES.get(platform, SIZES["facebook"])
     w, h = size
     base = _cover(Image.open(io.BytesIO(image_bytes)).convert("RGB"), size)

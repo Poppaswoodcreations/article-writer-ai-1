@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,18 +13,31 @@ import { ReferenceInputs } from '@/components/ReferenceInputs';
 import { PlatformPicker } from '@/components/PlatformPicker';
 import { PLATFORM_META } from '@/lib/platforms';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
 const ALL_PLATFORMS = Object.keys(PLATFORM_META).filter((p) => p !== 'email');
 const TONES = ['engaging', 'playful', 'professional', 'bold', 'inspirational', 'urgent'];
 
 const CampaignGenerator = () => {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const fromArticle = params.get('from_article');
+  const [sourceArticle, setSourceArticle] = useState(null);
   const [form, setForm] = useState({ topic: '', goal: '', keywords: '', tone: 'engaging' });
   const [platforms, setPlatforms] = useState(ALL_PLATFORMS);
   const [includeEmail, setIncludeEmail] = useState(true);
   const [urls, setUrls] = useState([]);
   const [images, setImages] = useState([]);
   const [generating, setGenerating] = useState(false);
+
+  useEffect(() => {
+    if (!fromArticle) return;
+    axios.get(`${API}/articles/${fromArticle}`).then(({ data }) => {
+      setSourceArticle(data);
+      setForm({ topic: data.title, goal: `Drive readers to the article "${data.title}" — [ARTICLE LINK]`, keywords: data.keywords || '', tone: 'engaging' });
+      setImages((data.image_paths || []).map((path) => ({ path, url: `${BACKEND_URL}/api/files/${path}`, name: path.split('/').pop() })));
+    }).catch(() => toast.error('Could not load the article to promote'));
+  }, [fromArticle]);
 
   const togglePlatform = (p) => setPlatforms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
 
@@ -40,7 +53,8 @@ const CampaignGenerator = () => {
         platforms: ALL_PLATFORMS.filter((p) => platforms.includes(p)),
         include_email: includeEmail,
         reference_urls: urls,
-        image_paths: images.map((img) => img.path)
+        image_paths: images.map((img) => img.path),
+        source_article_id: fromArticle || null
       });
       toast.success('Campaign generated!');
       navigate(`/campaigns/${data.campaign_id}`);
@@ -67,6 +81,15 @@ const CampaignGenerator = () => {
 
       <main className="container mx-auto px-6 md:px-12 py-12">
         <div className="max-w-3xl mx-auto">
+          {sourceArticle && (
+            <div className="mb-6 border border-accent/40 bg-accent/5 px-5 py-4 flex items-start gap-3" data-testid="promote-source-banner">
+              <Megaphone className="w-5 h-5 text-accent mt-0.5" />
+              <div className="text-sm">
+                <div className="font-medium">Promoting article: {sourceArticle.title}</div>
+                <div className="text-muted-foreground text-xs mt-1">The article's content, keywords and images are pre-filled below. Adjust platforms or tone, then generate.</div>
+              </div>
+            </div>
+          )}
           <Card className="bg-card border border-border shadow-sm rounded-none p-8">
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>

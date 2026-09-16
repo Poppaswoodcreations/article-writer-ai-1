@@ -4,14 +4,14 @@ import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Presentation } from 'lucide-react';
 import { toast } from 'sonner';
 import { ExportDialog } from '@/components/ExportDialog';
 import { PostCard } from '@/components/PostCard';
 import { RegeneratePopover, SchedulePicker } from '@/components/PostTools';
 import { GraphicDialog } from '@/components/GraphicDialog';
 import { SchedulePanel } from '@/components/SchedulePanel';
-import { downloadText } from '@/lib/platforms';
+import { downloadText, downloadBlob } from '@/lib/platforms';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EXPORT_OPTIONS = [
@@ -28,6 +28,7 @@ const CampaignEditor = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [deckBusy, setDeckBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -63,6 +64,19 @@ const CampaignEditor = () => {
     }
   };
 
+  const downloadDeck = async () => {
+    try {
+      setDeckBusy(true);
+      const res = await axios.get(`${API}/campaigns/${id}/deck.pdf`, { responseType: 'blob' });
+      downloadBlob(res.data, `${slugify(campaign.name)}-deck.pdf`);
+      toast.success('Deck downloaded');
+    } catch {
+      toast.error('Failed to build deck');
+    } finally {
+      setDeckBusy(false);
+    }
+  };
+
   if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>;
   if (!campaign) return null;
   const slug = slugify(campaign.name);
@@ -76,6 +90,9 @@ const CampaignEditor = () => {
             <h1 className="text-xl font-medium tracking-tight text-primary" data-testid="campaign-editor-title">Edit Campaign</h1>
           </div>
           <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={downloadDeck} disabled={deckBusy} className="h-10 px-4 rounded-none border-border hover:bg-stone-100 gap-2" data-testid="campaign-deck-button">
+              {deckBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Presentation className="w-4 h-4" />} Deck (PDF)
+            </Button>
             <ExportDialog open={exportOpen} onOpenChange={setExportOpen} title="Export Campaign" description="Download every post in one file" options={EXPORT_OPTIONS} onExport={handleExport} testIdPrefix="campaign-export" triggerLabel="Export All" />
             <Button onClick={handleSave} disabled={saving} className="bg-accent text-accent-foreground hover:bg-accent/90 h-10 px-6 rounded-none gap-2" data-testid="campaign-save-button">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save

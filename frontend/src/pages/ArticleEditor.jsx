@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Save, Loader2, ImagePlus } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, ImagePlus, Megaphone } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -122,6 +122,9 @@ const ArticleEditor = () => {
             <h1 className="text-xl font-medium tracking-tight text-primary" data-testid="editor-title">Edit Article</h1>
           </div>
           <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={() => navigate(`/campaigns/new?from_article=${id}`)} className="h-10 px-4 rounded-none border-border hover:bg-stone-100 gap-2" data-testid="promote-campaign-button">
+              <Megaphone className="w-4 h-4" /> Promote as Campaign
+            </Button>
             <ExportDialog open={exportDialogOpen} onOpenChange={setExportDialogOpen} title="Export Article" description="Choose a format to download your article" options={EXPORT_OPTIONS} onExport={handleExport} disabled={exporting} />
             <Button onClick={handleSave} disabled={saving} className="bg-accent text-accent-foreground hover:bg-accent/90 h-10 px-6 rounded-none font-medium transition-all duration-300 flex items-center gap-2" data-testid="save-button">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
