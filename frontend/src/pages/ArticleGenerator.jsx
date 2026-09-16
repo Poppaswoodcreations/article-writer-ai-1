@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card } from '@/components/ui/card';
 import { ArrowLeft, Sparkles, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ReferenceInputs } from '@/components/ReferenceInputs';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -20,6 +21,8 @@ const ArticleGenerator = () => {
     keywords: '',
     tone: 'professional'
   });
+  const [urls, setUrls] = useState([]);
+  const [images, setImages] = useState([]);
   const [generating, setGenerating] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -32,9 +35,13 @@ const ArticleGenerator = () => {
 
     try {
       setGenerating(true);
-      toast.info('Generating your article... This may take 30-60 seconds');
+      toast.info('Generating your article... This may take 30-90 seconds');
       
-      const response = await axios.post(`${API}/articles/generate`, formData);
+      const response = await axios.post(`${API}/articles/generate`, {
+        ...formData,
+        reference_urls: urls,
+        image_paths: images.map((img) => img.path)
+      });
       
       toast.success('Article generated successfully!');
       navigate(`/editor/${response.data.article_id}`);
@@ -136,6 +143,8 @@ const ArticleGenerator = () => {
                 </p>
               </div>
 
+              <ReferenceInputs urls={urls} onUrlsChange={setUrls} images={images} onImagesChange={setImages} disabled={generating} />
+
               <div className="pt-4">
                 <Button
                   type="submit"
@@ -178,7 +187,7 @@ const ArticleGenerator = () => {
                 </div>
                 <h3 className="text-lg font-medium mb-2">AI Generation</h3>
                 <p className="text-sm text-muted-foreground">
-                  Claude Sonnet 4 creates a comprehensive, SEO-optimized article
+                  Claude Sonnet creates a comprehensive, SEO-optimized article from your topic, URLs and images
                 </p>
               </div>
               <div className="bg-card border border-border p-6 rounded-none">

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request
 from fastapi.responses import Response
 from dotenv import load_dotenv
 import requests
@@ -11,8 +11,12 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+from bs4 import BeautifulSoup
 import asyncio
+import base64
+import json
+import re
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -66,11 +70,76 @@ async def startup_storage():
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+CLAUDE_MODEL = "claude-sonnet-4-6"
+PLATFORMS = ["facebook", "instagram", "linkedin", "twitter", "tiktok"]
+
+def fetch_reference_text(url: str) -> str:
+    resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0 (compatible; ArticleWriterBot/1.0)"})
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "lxml")
+    for tag in soup(["script", "style", "nav", "footer", "header", "noscript", "svg"]):
+        tag.decompose()
+    text = " ".join(soup.get_text(" ").split())
+    return text[:6000]
+
+async def build_research_block(reference_urls: List[str]) -> str:
+    if not reference_urls:
+        return ""
+    parts = []
+    for url in reference_urls[:5]:
+        try:
+            text = await asyncio.to_thread(fetch_reference_text, url)
+            parts.append(f"SOURCE: {url}\n{text}")
+        except Exception as e:
+            logging.warning(f"Could not fetch reference {url}: {e}")
+            parts.append(f"SOURCE: {url}\n(could not be fetched)")
+    return "\n\nREFERENCE MATERIAL (use as research, do not copy verbatim):\n\n" + "\n\n---\n\n".join(parts)
+
+async def build_image_contents(image_paths: List[str]) -> List[ImageContent]:
+    contents = []
+    for path in image_paths[:5]:
+        try:
+            data, _ = await asyncio.to_thread(get_object, path)
+            contents.append(ImageContent(image_base64=base64.b64encode(data).decode()))
+        except Exception as e:
+            logging.warning(f"Could not load image {path}: {e}")
+    return contents
+
+def image_instruction(image_paths: List[str], public_base: str) -> str:
+    if not image_paths:
+        return ""
+    urls = "\n".join(f"IMAGE {i+1}: {public_base}/api/files/{p}" for i, p in enumerate(image_paths))
+    return f"\n\nATTACHED IMAGES: The user attached {len(image_paths)} image(s), shown in order. Study each one and describe what it shows (products, scenes, people, text). Reference them naturally in the content.\n{urls}"
+
+def public_base_url(request: Request) -> str:
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc))
+    return f"{proto}://{host}"
+
+def new_chat(system_message: str) -> LlmChat:
+    return LlmChat(
+        api_key=os.environ['EMERGENT_LLM_KEY'],
+        session_id=f"gen-{uuid.uuid4()}",
+        system_message=system_message
+    ).with_model("anthropic", CLAUDE_MODEL)
+
+def parse_json_block(text: str) -> dict:
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    return json.loads(match.group(0) if match else text)
+
+def iso_to_dt(doc: dict) -> dict:
+    for k in ("created_at", "updated_at"):
+        if isinstance(doc.get(k), str):
+            doc[k] = datetime.fromisoformat(doc[k])
+    return doc
+
 # Define Models
 class ArticleCreate(BaseModel):
     topic: str
     keywords: Optional[str] = None
     tone: Optional[str] = "professional"
+    reference_urls: List[str] = []
+    image_paths: List[str] = []
 
 class ArticleUpdate(BaseModel):
     title: Optional[str] = None
@@ -90,6 +159,8 @@ class Article(BaseModel):
     meta_title: str
     meta_description: str
     url_slug: str
+    reference_urls: List[str] = []
+    image_paths: List[str] = []
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -97,26 +168,63 @@ class GenerateResponse(BaseModel):
     article_id: str
     message: str
 
+class CampaignPost(BaseModel):
+    platform: str
+    content: str
+    hashtags: str = ""
+
+class CampaignCreate(BaseModel):
+    topic: str
+    goal: Optional[str] = None
+    keywords: Optional[str] = None
+    tone: Optional[str] = "engaging"
+    platforms: List[str] = PLATFORMS
+    include_email: bool = True
+    reference_urls: List[str] = []
+    image_paths: List[str] = []
+
+class CampaignUpdate(BaseModel):
+    name: Optional[str] = None
+    posts: Optional[List[CampaignPost]] = None
+    email_copy: Optional[str] = None
+
+class Campaign(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    topic: str
+    goal: Optional[str] = None
+    keywords: Optional[str] = None
+    tone: Optional[str] = None
+    platforms: List[str] = []
+    posts: List[CampaignPost] = []
+    email_copy: str = ""
+    reference_urls: List[str] = []
+    image_paths: List[str] = []
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 # Routes
 @api_router.get("/")
 async def root():
     return {"message": "AI-Powered Article Writer API"}
 
 @api_router.post("/articles/generate", response_model=GenerateResponse)
-async def generate_article(input_data: ArticleCreate):
+async def generate_article(input_data: ArticleCreate, request: Request):
     try:
-        # Initialize Claude Sonnet 4 chat
-        chat = LlmChat(
-            api_key=os.environ['EMERGENT_LLM_KEY'],
-            session_id=f"article-gen-{uuid.uuid4()}",
-            system_message="You are an expert SEO content writer who creates high-quality, engaging articles optimized for search engines."
-        ).with_model("anthropic", "claude-sonnet-4-6")
-        
+        chat = new_chat("You are an expert SEO content writer who creates high-quality, engaging articles optimized for search engines and AI answer engines (GEO).")
+        research = await build_research_block(input_data.reference_urls)
+        images = await build_image_contents(input_data.image_paths)
+        image_note = image_instruction(input_data.image_paths, public_base_url(request))
+        if input_data.image_paths:
+            image_note += "\n\nIn ARTICLE_CONTENT, insert each image exactly once where it fits best using markdown: ![descriptive alt text](IMAGE URL). Alt text must describe the actual image content for SEO."
+
         # Create research and generation prompt
         keywords_text = f" focusing on keywords: {input_data.keywords}" if input_data.keywords else ""
         prompt = f"""Create a comprehensive, SEO-optimized article about: {input_data.topic}{keywords_text}
 
-Tone: {input_data.tone}
+Tone: {input_data.tone}{research}{image_note}
 
 Provide the following in a structured format:
 1. ARTICLE_TITLE: A compelling, SEO-friendly title (60-70 characters)
@@ -147,11 +255,13 @@ META_DESCRIPTION:
 URL_SLUG:
 [url-slug-here]"""
         
-        user_message = UserMessage(text=prompt)
+        user_message = UserMessage(text=prompt, file_contents=images)
         response = await chat.send_message(user_message)
         
         # Parse the response
         article_data = parse_article_response(response, input_data.topic, input_data.keywords)
+        article_data['reference_urls'] = input_data.reference_urls
+        article_data['image_paths'] = input_data.image_paths
         
         # Save to database
         article = Article(**article_data)
@@ -350,6 +460,112 @@ async def get_file(path: str):
     return Response(content=data, media_type=record.get("content_type") or content_type,
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
+PLATFORM_RULES = {
+    "facebook": "Facebook post: 80-150 words, conversational, 1-2 emojis max, a clear call to action, 3-5 hashtags.",
+    "instagram": "Instagram caption: hook in first line, 100-150 words, line breaks for readability, emojis welcome, 10-15 hashtags.",
+    "linkedin": "LinkedIn post: professional, 150-250 words, short paragraphs, insight-driven, ends with a question, 3-5 hashtags.",
+    "twitter": "X/Twitter: a thread of 3-5 tweets, each under 280 characters, numbered like 1/, 2/, punchy, 1-3 hashtags in last tweet.",
+    "tiktok": "TikTok: a 30-45 second video script with [HOOK], [SCENE] beats and on-screen text cues, plus a caption under 150 characters, 4-6 hashtags.",
+}
+
+@api_router.post("/campaigns/generate")
+async def generate_campaign(input_data: CampaignCreate, request: Request):
+    platforms = [p for p in input_data.platforms if p in PLATFORMS] or PLATFORMS
+    try:
+        chat = new_chat("You are a senior social media strategist and copywriter. You write platform-native, high-converting campaign content. You always answer with valid JSON only.")
+        research = await build_research_block(input_data.reference_urls)
+        images = await build_image_contents(input_data.image_paths)
+        image_note = image_instruction(input_data.image_paths, public_base_url(request))
+        rules = "\n".join(f"- {p}: {PLATFORM_RULES[p]}" for p in platforms)
+        email_rule = '\n  "email_copy": "a short promotional email (subject line on first line, then 120-180 words body)",' if input_data.include_email else ''
+        prompt = f"""Create a cohesive social media campaign.
+
+TOPIC / PRODUCT: {input_data.topic}
+GOAL / CALL TO ACTION: {input_data.goal or 'raise awareness and drive engagement'}
+KEYWORDS: {input_data.keywords or 'none'}
+TONE: {input_data.tone}{research}{image_note}
+
+Write one post per platform following these rules:
+{rules}
+
+Respond ONLY with JSON in this exact shape:
+{{
+  "name": "short campaign name (max 8 words)",{email_rule}
+  "posts": [
+    {{"platform": "{platforms[0]}", "content": "post text", "hashtags": "#tag1 #tag2"}}
+  ]
+}}
+Include exactly these platforms in order: {", ".join(platforms)}. Do not put hashtags inside content; put them in the hashtags field."""
+
+        response = await chat.send_message(UserMessage(text=prompt, file_contents=images))
+        data = parse_json_block(response)
+        posts = [CampaignPost(platform=p.get("platform", ""), content=p.get("content", ""), hashtags=p.get("hashtags", "")) for p in data.get("posts", [])]
+        campaign = Campaign(
+            name=data.get("name") or f"Campaign: {input_data.topic}",
+            topic=input_data.topic, goal=input_data.goal, keywords=input_data.keywords, tone=input_data.tone,
+            platforms=platforms, posts=posts, email_copy=data.get("email_copy", "") or "",
+            reference_urls=input_data.reference_urls, image_paths=input_data.image_paths,
+        )
+        doc = campaign.model_dump()
+        doc['created_at'] = doc['created_at'].isoformat()
+        doc['updated_at'] = doc['updated_at'].isoformat()
+        await db.campaigns.insert_one(doc)
+        return {"campaign_id": campaign.id, "message": "Campaign generated successfully"}
+    except Exception as e:
+        logging.error(f"Error generating campaign: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating campaign: {str(e)}")
+
+@api_router.get("/campaigns", response_model=List[Campaign])
+async def get_campaigns():
+    docs = await db.campaigns.find({}, {"_id": 0}).to_list(1000)
+    docs = [iso_to_dt(d) for d in docs]
+    docs.sort(key=lambda x: x.get('created_at', datetime.min), reverse=True)
+    return docs
+
+@api_router.get("/campaigns/{campaign_id}", response_model=Campaign)
+async def get_campaign(campaign_id: str):
+    doc = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return iso_to_dt(doc)
+
+@api_router.put("/campaigns/{campaign_id}", response_model=Campaign)
+async def update_campaign(campaign_id: str, update_data: CampaignUpdate):
+    if not await db.campaigns.find_one({"id": campaign_id}):
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    update_dict = update_data.model_dump(exclude_unset=True)
+    update_dict['updated_at'] = datetime.now(timezone.utc).isoformat()
+    await db.campaigns.update_one({"id": campaign_id}, {"$set": update_dict})
+    return iso_to_dt(await db.campaigns.find_one({"id": campaign_id}, {"_id": 0}))
+
+@api_router.delete("/campaigns/{campaign_id}")
+async def delete_campaign(campaign_id: str):
+    result = await db.campaigns.delete_one({"id": campaign_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return {"message": "Campaign deleted successfully"}
+
+@api_router.get("/campaigns/{campaign_id}/export/{format}")
+async def export_campaign(campaign_id: str, format: str):
+    c = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    slug = re.sub(r"[^a-z0-9]+", "-", c['name'].lower()).strip("-")[:50] or "campaign"
+    if format == "markdown":
+        body = "\n\n".join(f"## {p['platform'].title()}\n\n{p['content']}\n\n{p['hashtags']}" for p in c['posts'])
+        email = f"\n\n## Email\n\n{c['email_copy']}" if c.get('email_copy') else ""
+        return {"format": "markdown", "content": f"# {c['name']}\n\n**Topic:** {c['topic']}\n\n{body}{email}", "filename": f"{slug}.md"}
+    if format == "txt":
+        body = "\n\n".join(f"=== {p['platform'].upper()} ===\n{p['content']}\n{p['hashtags']}" for p in c['posts'])
+        email = f"\n\n=== EMAIL ===\n{c['email_copy']}" if c.get('email_copy') else ""
+        return {"format": "txt", "content": f"{c['name']}\n\n{body}{email}", "filename": f"{slug}.txt"}
+    if format == "html":
+        posts = "".join(f"<section><h2>{p['platform'].title()}</h2><p>{p['content'].replace(chr(10), '<br>')}</p><p><em>{p['hashtags']}</em></p></section>" for p in c['posts'])
+        email = f"<section><h2>Email</h2><p>{c['email_copy'].replace(chr(10), '<br>')}</p></section>" if c.get('email_copy') else ""
+        html = f"<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>{c['name']}</title></head><body><h1>{c['name']}</h1>{posts}{email}</body></html>"
+        return {"format": "html", "content": html, "filename": f"{slug}.html"}
+    raise HTTPException(status_code=400, detail="Unsupported format. Use 'markdown', 'txt' or 'html'")
+
 @api_router.get("/articles/{article_id}/export/{format}")
 async def export_article(article_id: str, format: str):
     article = await db.articles.find_one({"id": article_id}, {"_id": 0})
@@ -360,6 +576,10 @@ async def export_article(article_id: str, format: str):
     if format == "markdown":
         content = f"# {article['title']}\n\n{article['content']}\n\n---\n\n**Meta Title:** {article['meta_title']}\n\n**Meta Description:** {article['meta_description']}\n\n**URL Slug:** {article['url_slug']}"
         return {"format": "markdown", "content": content, "filename": f"{article['url_slug']}.md"}
+
+    elif format == "txt":
+        content = f"{article['title']}\n\n{article['content']}"
+        return {"format": "txt", "content": content, "filename": f"{article['url_slug']}.txt"}
     
     elif format == "html":
         content = f"""<!DOCTYPE html>

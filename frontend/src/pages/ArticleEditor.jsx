@@ -8,8 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { ArrowLeft, Save, Download, Loader2, FileText, Code, Image, Upload } from 'lucide-react';
+import { ArrowLeft, Save, Download, Loader2, FileText, Code, Image, Upload, AlignLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -221,6 +223,18 @@ const ArticleEditor = () => {
                         <div className="text-xs opacity-70">Full HTML document with SEO meta tags</div>
                       </div>
                     </Button>
+                    <Button
+                      onClick={() => handleExport('txt')}
+                      disabled={exporting}
+                      className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/80 h-12 rounded-none justify-start gap-3"
+                      data-testid="export-txt-button"
+                    >
+                      <AlignLeft className="w-5 h-5" />
+                      <div className="text-left">
+                        <div className="font-medium">Plain Text</div>
+                        <div className="text-xs opacity-70">Ready to paste anywhere</div>
+                      </div>
+                    </Button>
                   </div>
                 </DialogContent>
               </Dialog>
@@ -246,14 +260,24 @@ const ArticleEditor = () => {
       <main className="container mx-auto px-6 md:px-12 py-12">
         <div className="max-w-4xl mx-auto">
           <Tabs defaultValue="content" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 rounded-none h-12 bg-muted">
+            <TabsList className="grid w-full grid-cols-3 rounded-none h-12 bg-muted">
               <TabsTrigger value="content" className="rounded-none" data-testid="content-tab">
                 Content
+              </TabsTrigger>
+              <TabsTrigger value="preview" className="rounded-none" data-testid="preview-tab">
+                Preview
               </TabsTrigger>
               <TabsTrigger value="seo" className="rounded-none" data-testid="seo-tab">
                 SEO Metadata
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="preview" className="mt-8">
+              <article className="prose prose-stone max-w-none article-preview" data-testid="article-preview">
+                <h1 style={{ fontFamily: 'Playfair Display, serif' }}>{article.title}</h1>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{article.content}</ReactMarkdown>
+              </article>
+            </TabsContent>
 
             <TabsContent value="content" className="mt-8 space-y-6">
               <div>
