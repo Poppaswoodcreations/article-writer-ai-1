@@ -32,11 +32,14 @@ Research and create GEO-optimized, top-ranking articles with Meta Title, Meta De
 - 2026-06: Post Scheduler — `scheduled_at` per post, SchedulePicker (calendar+time), SchedulePanel, GET /api/campaigns/{id}/schedule/{csv|ics}
 - 2026-06: Regenerate One Post — POST /api/campaigns/{id}/posts/{platform}/regenerate {instruction}
 
+- 2026-06: Brand Kit — `/brand` page, GET/PUT /api/brand (settings collection, key "brand"); graphics apply accent color, handle, logo (corner selectable) unless `use_brand:false`
+- 2026-06: Word/PDF export — `exports.py` (python-docx + reportlab, bundled Liberation fonts), GET /api/articles/{id}/download/{docx|pdf}, images embedded from object storage
+- 2026-06: Campaign Calendar — dashboard "Calendar" tab (?tab=calendar), GET /api/schedule feed, month grid with platform dots + day details
+
 ## Backlog
 - P2: Bulk "Generate all graphics" for a campaign
-- P2: Rich-text (WYSIWYG) editor, PDF/DOCX export
-- P2: Month calendar view across all campaigns
+- P2: Rich-text (WYSIWYG) editor
 - P2: Client-side error boundary on dashboard
 
 ## Testing
-- Reports: /app/test_reports/iteration_1..6.json (all passing)
+- Reports: /app/test_reports/iteration_1..7.json (all passing)

@@ -97,6 +97,9 @@ def build_docx(article: dict, fetch_image: ImageFetcher) -> bytes:
     doc.add_heading(article["title"], level=0)
 
     for kind, value in parse_blocks(article["content"]):
+        if kind == "hr":
+            doc.add_paragraph()
+            continue
         if kind.startswith("h"):
             doc.add_heading(value, level=min(int(kind[1]), 4))
         elif kind == "p":
@@ -114,8 +117,6 @@ def build_docx(article: dict, fetch_image: ImageFetcher) -> bytes:
                     run = p.add_run(text)
                     run.bold = fmt.get("bold", False)
                     run.italic = fmt.get("italic", False)
-        elif kind == "hr":
-            doc.add_paragraph()
         elif kind == "img":
             alt, url = value
             data = fetch_image(url)
@@ -186,14 +187,15 @@ def build_pdf(article: dict, fetch_image: ImageFetcher) -> bytes:
     story = [Paragraph(_escape(article["title"]), styles["title"])]
 
     for kind, value in parse_blocks(article["content"]):
+        if kind == "hr":
+            story.append(Spacer(1, 12))
+            continue
         if kind.startswith("h"):
             story.append(Paragraph(_inline_markup(value), styles.get(kind, styles["h3"])))
         elif kind == "p":
             story.append(Paragraph(_inline_markup(value), body))
         elif kind == "ul":
             story.append(ListFlowable([ListItem(Paragraph(_inline_markup(i), body), leftIndent=12) for i in value], bulletType="bullet", start="•", leftIndent=14))
-        elif kind == "hr":
-            story.append(Spacer(1, 12))
         elif kind == "img":
             alt, url = value
             data = fetch_image(url)
