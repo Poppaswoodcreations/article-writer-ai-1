@@ -11,6 +11,7 @@ import { PostCard } from '@/components/PostCard';
 import { RegeneratePopover, SchedulePicker } from '@/components/PostTools';
 import { GraphicDialog } from '@/components/GraphicDialog';
 import { SchedulePanel } from '@/components/SchedulePanel';
+import { BulkGraphicsDialog } from '@/components/BulkGraphicsDialog';
 import { downloadText, downloadBlob } from '@/lib/platforms';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -90,6 +91,7 @@ const CampaignEditor = () => {
             <h1 className="text-xl font-medium tracking-tight text-primary" data-testid="campaign-editor-title">Edit Campaign</h1>
           </div>
           <div className="flex items-center gap-3">
+            <BulkGraphicsDialog campaignId={id} posts={campaign.posts} imagePaths={campaign.image_paths || []} onDone={(posts) => setCampaign((c) => ({ ...c, posts }))} />
             <Button variant="outline" onClick={downloadDeck} disabled={deckBusy} className="h-10 px-4 rounded-none border-border hover:bg-stone-100 gap-2" data-testid="campaign-deck-button">
               {deckBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Presentation className="w-4 h-4" />} Deck (PDF)
             </Button>

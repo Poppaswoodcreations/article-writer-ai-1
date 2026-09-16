@@ -580,6 +580,49 @@ Respond ONLY with JSON: {{"content": "new post text", "hashtags": "#tag1 #tag2"}
     await save_posts(campaign_id, campaign["posts"])
     return post
 
+def first_sentence(text: str) -> str:
+    clean = re.sub(r"\[[^\]]*\]", "", text).strip()
+    sentence = re.split(r"(?<=[.!?])\s+", clean)[0] if clean else ""
+    return sentence[:110] or clean[:110]
+
+async def render_and_store(campaign: dict, post: dict, image_bytes: bytes, headline: str, handle: Optional[str], ai: bool, brand: Optional[dict]) -> str:
+    platform = post["platform"]
+    if ai:
+        image_bytes = await ai_enhance(image_bytes, platform, f"{campaign['topic']}. {campaign.get('goal') or ''}")
+    png = await asyncio.to_thread(render_graphic, image_bytes, platform, headline, handle, brand)
+    path = f"{APP_NAME}/graphics/{campaign['id']}/{platform}-{uuid.uuid4().hex[:8]}.png"
+    result = await storage_call(put_object, path, png, "image/png", error="Error saving graphic", status=500)
+    await db.files.insert_one({"id": str(uuid.uuid4()), "storage_path": result["path"], "original_filename": f"{platform}.png",
+                               "content_type": "image/png", "size": len(png), "is_deleted": False, "created_at": datetime.now(timezone.utc).isoformat()})
+    return result["path"]
+
+class BulkGraphicRequest(BaseModel):
+    image_path: str
+    handle: Optional[str] = None
+    ai_enhance: bool = False
+    use_brand: bool = True
+    overwrite: bool = True
+
+@api_router.post("/campaigns/{campaign_id}/graphics/all")
+async def create_all_graphics(campaign_id: str, body: BulkGraphicRequest):
+    campaign = await get_campaign_or_404(campaign_id)
+    if not await db.files.find_one({"storage_path": body.image_path, "is_deleted": False}):
+        raise HTTPException(status_code=404, detail="Image not found")
+    image_bytes, _ = await storage_call(get_object, body.image_path, error="Image not found", status=404)
+    brand = await load_brand_for_render() if body.use_brand else None
+    created, failed = [], []
+    for post in campaign["posts"]:
+        if post.get("graphic_path") and not body.overwrite:
+            continue
+        try:
+            post["graphic_path"] = await render_and_store(campaign, post, image_bytes, first_sentence(post["content"]), body.handle, body.ai_enhance, brand)
+            created.append(post["platform"])
+        except Exception as e:
+            logging.error(f"Bulk graphic failed for {post['platform']}: {str(e)}")
+            failed.append(post["platform"])
+    await save_posts(campaign_id, campaign["posts"])
+    return {"created": created, "failed": failed, "posts": campaign["posts"]}
+
 @api_router.post("/campaigns/{campaign_id}/posts/{platform}/graphic")
 async def create_graphic(campaign_id: str, platform: str, body: GraphicRequest):
     campaign = await get_campaign_or_404(campaign_id)
@@ -587,21 +630,16 @@ async def create_graphic(campaign_id: str, platform: str, body: GraphicRequest):
     if not await db.files.find_one({"storage_path": body.image_path, "is_deleted": False}):
         raise HTTPException(status_code=404, detail="Image not found")
     image_bytes, _ = await storage_call(get_object, body.image_path, error="Image not found", status=404)
-    if body.ai_enhance:
-        try:
-            image_bytes = await ai_enhance(image_bytes, platform, f"{campaign['topic']}. {campaign.get('goal') or ''}")
-        except Exception as e:
-            logging.error(f"AI enhance failed: {str(e)}")
-            raise HTTPException(status_code=502, detail="AI enhance failed, try again or use the plain overlay")
     brand = await load_brand_for_render() if body.use_brand else None
-    png = await asyncio.to_thread(render_graphic, image_bytes, platform, body.headline, body.handle, brand)
-    path = f"{APP_NAME}/graphics/{campaign_id}/{platform}-{uuid.uuid4().hex[:8]}.png"
-    result = await storage_call(put_object, path, png, "image/png", error="Error saving graphic", status=500)
-    await db.files.insert_one({"id": str(uuid.uuid4()), "storage_path": result["path"], "original_filename": f"{platform}.png",
-                               "content_type": "image/png", "size": len(png), "is_deleted": False, "created_at": datetime.now(timezone.utc).isoformat()})
-    post["graphic_path"] = result["path"]
+    try:
+        post["graphic_path"] = await render_and_store(campaign, post, image_bytes, body.headline, body.handle, body.ai_enhance, brand)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Graphic failed: {str(e)}")
+        raise HTTPException(status_code=502, detail="AI enhance failed, try again or use the plain overlay" if body.ai_enhance else "Error creating graphic")
     await save_posts(campaign_id, campaign["posts"])
-    return {"url": f"/api/files/{result['path']}", "path": result["path"]}
+    return {"url": f"/api/files/{post['graphic_path']}", "path": post["graphic_path"]}
 
 def schedule_rows(campaign: dict) -> list:
     rows = [p for p in campaign["posts"] if p.get("scheduled_at")]
