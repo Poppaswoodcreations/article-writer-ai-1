@@ -25,6 +25,8 @@ Research and create GEO-optimized, top-ranking articles with Meta Title, Meta De
 - 2026-06: Reference URLs (fetched via requests+bs4, ≤5, 6k chars each) and reference images (Claude vision via ImageContent, inserted into article as markdown with alt text) on both generators (`ReferenceInputs.jsx`)
 - 2026-06: Dashboard "Content Studio" with Articles | Campaigns tabs (?tab=); article Preview tab (react-markdown); article TXT export
 
+- 2026-06: Code-review refactor: backend helpers (build_article_prompt, regex parse_article_response, insert_timestamped, storage_call, build_campaign_prompt, campaign_from_response, CAMPAIGN_EXPORTERS); frontend split into ExportDialog, ImageUploadDialog, SeoFields, PostCard, PlatformPicker, HowItWorks; ReferenceInputs → UrlList + ImageUploader (dup URL guard, stable keys); fixed email leaking into platforms list
+
 ## Backlog
 - P1: Drag-and-drop / paste images directly into editor
 - P2: Rich-text (WYSIWYG) editor, PDF/DOCX export
@@ -32,4 +34,4 @@ Research and create GEO-optimized, top-ranking articles with Meta Title, Meta De
 - P2: Client-side error boundary on dashboard
 
 ## Testing
-- Reports: /app/test_reports/iteration_1..4.json (all passing)
+- Reports: /app/test_reports/iteration_1..5.json (all passing)

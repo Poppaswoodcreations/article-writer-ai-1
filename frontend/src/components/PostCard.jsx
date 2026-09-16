@@ -12,8 +12,12 @@ export const PostCard = ({ platform, value, hashtags, onChange, onHashtagsChange
   const fullText = hashtags !== undefined ? `${value}\n\n${hashtags}`.trim() : value;
 
   const copy = async () => {
-    await navigator.clipboard.writeText(fullText);
-    toast.success(`${meta.label} post copied`);
+    try {
+      await navigator.clipboard.writeText(fullText);
+      toast.success(`${meta.label} post copied`);
+    } catch (err) {
+      toast.error('Copy failed — clipboard blocked by browser');
+    }
   };
 
   return (

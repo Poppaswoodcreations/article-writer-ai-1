@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 5 regression after refactor. Backend: all pre-existing tests (13) still pass, plus new tests for parser refactor (no META_TITLE:/URL_SLUG:/META_DESCRIPTION: markers in article.content), article export bad format returns 400, and a fresh LLM campaign generation (topic: Summer sale on handmade candles) — campaign_id 12e4723b-5378-46cd-9d5c-42b5d63b77c3 has facebook+instagram posts (content+hashtags) and non-empty email_copy; txt/markdown/html exports all return correct filenames slugged from name (summer-glow-handmade-candle-sale.*). Bad format on real campaign → 400. Non-image upload (text/plain) → 400. Nonexistent /api/files/... → 404. Frontend: Dashboard shows 'Content Studio', Articles(4)/Campaigns(1) tabs, ?tab=campaigns renders campaign card. CampaignGenerator /campaigns/new: platform-checkboxes has exactly 6 entries [facebook,instagram,linkedin,twitter,tiktok,email] — no duplicate email. Reference URL: adding same URL twice → toast 'That URL is already added', list stays at 1, remove-url-0 removes to 0; reference-image-input accepts PNG. CampaignEditor /campaigns/{id}: post-card-facebook, post-card-instagram, post-card-email present with post-content/post-hashtags/copy-post/download-post buttons; edit to facebook content saved via campaign-save-button and persisted after reload; campaign-export-button dialog exposes -txt/-markdown/-html buttons; clicking txt triggered download (summer-glow-handmade-candle-sale.txt). ArticleEditor /editor/{id}: content-tab/preview-tab/seo-tab present; add-image-button opens dialog, PNG upload inserts markdown '![Image](https://.../api/files/article-writer/uploads/...png)' and closes dialog; save-button persists title after reload; preview-tab renders article-preview with 22 headings; seo-tab shows meta-title-input/meta-description-textarea/url-slug-input; export dialog has -markdown/-html/-txt and markdown click triggered download (cold-brew-coffee-at-home-complete-guide.md). /generate page shows 'How It Works' section with 3 numbered steps and ReferenceInputs (URL+image). One issue found and fixed: PostCard.copy() had no try/catch — in headless/blocked clipboard environments this surfaced an Uncaught runtime error overlay ('Failed to execute writeText on Clipboard: Write permission denied'). Wrapped in try/catch with toast.error fallback.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_article_writer.py",
+    "/app/backend/tests/test_campaigns.py",
+    "/app/backend/tests/test_regression_iter5.py",
+    "/app/test_reports/pytest/iter5.xml",
+    "/app/test_reports/pytest/iter5_new.xml"
+  ],
+  "action_items": [
+    "Consider adding data-testid='how-it-works-step-N' to individual steps in HowItWorks.jsx for stable UI tests (nice-to-have, non-blocking).",
+    "Article export 400 message still says 'Use markdown or html' though 'txt' is supported — update text for parity (carry-over from iter 4).",
+    "Verify ArticleEditor.jsx copy handlers (if any) also use try/catch — same clipboard rejection issue could crash there."
+  ],
+  "critical_code_review_comments": [
+    "PostCard.copy previously called navigator.clipboard.writeText without try/catch — an unhandled promise rejection would blow up as an Uncaught runtime error overlay in dev/preview builds. Fixed. Search for other clipboard.writeText calls across the codebase and apply the same defensive pattern.",
+    "server.py article export error still lists only markdown/html although txt is now valid — cosmetic inconsistency vs campaign export which is up-to-date."
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/PostCard.jsx",
+    "/app/backend/tests/test_regression_iter5.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "N/A - no auth",
+  "seed_data_creation": "Generated 1 new campaign id=12e4723b-5378-46cd-9d5c-42b5d63b77c3 (Summer Glow Handmade Candle Sale, facebook+instagram+email_copy). Facebook post content has trailing '[EDITED-ITER5]' marker from persistence test. Article aa74874f-d686-459b-8bcd-0e36dc8fe3e2 title was temporarily suffixed with ' [iter5]' during test then reverted to original.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Post-refactor regression PASSED. Campaign 12e4723b-5378-46cd-9d5c-42b5d63b77c3 is available for reuse (facebook/instagram posts + email_copy). LLM cost this iter: 1 campaign gen only. PostCard clipboard error handling fixed to prevent runtime overlay in headless. Parser refactor verified: no leaked markers in content field. All 6 platform checkboxes present with no duplicate email in CampaignGenerator.",
+  "rca of the issue": "PostCard.copy → navigator.clipboard.writeText rejects when browser blocks clipboard (headless, insecure origin, denied permission). Because copy was async without try/catch, the rejection propagated as an unhandled promise → React's dev overlay caught it → user sees 'Uncaught runtime errors: Failed to execute writeText on Clipboard: Write permission denied.' Fix: wrap the call in try/catch and toast.error on failure so users get a clean message instead of a crashing overlay."
+}
