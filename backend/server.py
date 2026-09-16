@@ -10,11 +10,14 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 from bs4 import BeautifulSoup
+from graphics import render_graphic, ai_enhance
 import asyncio
 import base64
+import csv
+import io
 import json
 import re
 
@@ -172,6 +175,17 @@ class CampaignPost(BaseModel):
     platform: str
     content: str
     hashtags: str = ""
+    scheduled_at: Optional[str] = None
+    graphic_path: Optional[str] = None
+
+class RegenerateRequest(BaseModel):
+    instruction: str = ""
+
+class GraphicRequest(BaseModel):
+    image_path: str
+    headline: str
+    handle: Optional[str] = None
+    ai_enhance: bool = False
 
 class CampaignCreate(BaseModel):
     topic: str
@@ -501,6 +515,105 @@ def campaign_html(c: dict) -> str:
     return f"<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>{c['name']}</title></head><body><h1>{c['name']}</h1>{posts}{email}</body></html>"
 
 CAMPAIGN_EXPORTERS = {"markdown": (campaign_markdown, "md"), "txt": (campaign_txt, "txt"), "html": (campaign_html, "html")}
+
+async def get_campaign_or_404(campaign_id: str) -> dict:
+    doc = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return doc
+
+def find_post(campaign: dict, platform: str) -> dict:
+    for post in campaign["posts"]:
+        if post["platform"] == platform:
+            return post
+    raise HTTPException(status_code=404, detail="Post not found")
+
+async def save_posts(campaign_id: str, posts: list) -> None:
+    await db.campaigns.update_one({"id": campaign_id}, {"$set": {"posts": posts, "updated_at": datetime.now(timezone.utc).isoformat()}})
+
+@api_router.post("/campaigns/{campaign_id}/posts/{platform}/regenerate")
+async def regenerate_post(campaign_id: str, platform: str, body: RegenerateRequest):
+    campaign = await get_campaign_or_404(campaign_id)
+    post = find_post(campaign, platform)
+    prompt = f"""Rewrite this {platform} post for the campaign "{campaign['name']}" (topic: {campaign['topic']}; goal: {campaign.get('goal') or 'engagement'}; tone: {campaign.get('tone') or 'engaging'}).
+Platform rules: {PLATFORM_RULES.get(platform, '')}
+Instruction from the user: {body.instruction or 'make it fresher and more engaging'}
+
+CURRENT POST:
+{post['content']}
+HASHTAGS: {post['hashtags']}
+
+Respond ONLY with JSON: {{"content": "new post text", "hashtags": "#tag1 #tag2"}}"""
+    try:
+        chat = new_chat("You are a senior social media copywriter. You always answer with valid JSON only.")
+        data = parse_json_block(await chat.send_message(UserMessage(text=prompt)))
+    except Exception as e:
+        logging.error(f"Error regenerating post: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error regenerating post")
+    post["content"] = data.get("content") or post["content"]
+    post["hashtags"] = data.get("hashtags", post["hashtags"])
+    await save_posts(campaign_id, campaign["posts"])
+    return post
+
+@api_router.post("/campaigns/{campaign_id}/posts/{platform}/graphic")
+async def create_graphic(campaign_id: str, platform: str, body: GraphicRequest):
+    campaign = await get_campaign_or_404(campaign_id)
+    post = find_post(campaign, platform)
+    if not await db.files.find_one({"storage_path": body.image_path, "is_deleted": False}):
+        raise HTTPException(status_code=404, detail="Image not found")
+    image_bytes, _ = await storage_call(get_object, body.image_path, error="Image not found", status=404)
+    if body.ai_enhance:
+        try:
+            image_bytes = await ai_enhance(image_bytes, platform, f"{campaign['topic']}. {campaign.get('goal') or ''}")
+        except Exception as e:
+            logging.error(f"AI enhance failed: {str(e)}")
+            raise HTTPException(status_code=502, detail="AI enhance failed, try again or use the plain overlay")
+    png = await asyncio.to_thread(render_graphic, image_bytes, platform, body.headline, body.handle)
+    path = f"{APP_NAME}/graphics/{campaign_id}/{platform}-{uuid.uuid4().hex[:8]}.png"
+    result = await storage_call(put_object, path, png, "image/png", error="Error saving graphic", status=500)
+    await db.files.insert_one({"id": str(uuid.uuid4()), "storage_path": result["path"], "original_filename": f"{platform}.png",
+                               "content_type": "image/png", "size": len(png), "is_deleted": False, "created_at": datetime.now(timezone.utc).isoformat()})
+    post["graphic_path"] = result["path"]
+    await save_posts(campaign_id, campaign["posts"])
+    return {"url": f"/api/files/{result['path']}", "path": result["path"]}
+
+def schedule_rows(campaign: dict) -> list:
+    rows = [p for p in campaign["posts"] if p.get("scheduled_at")]
+    return sorted(rows, key=lambda p: p["scheduled_at"])
+
+def schedule_csv(campaign: dict) -> str:
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["Campaign", "Platform", "Scheduled (UTC)", "Post", "Hashtags"])
+    for p in schedule_rows(campaign):
+        writer.writerow([campaign["name"], p["platform"], p["scheduled_at"], p["content"], p["hashtags"]])
+    return out.getvalue()
+
+def schedule_ics(campaign: dict) -> str:
+    def ics_escape(s: str) -> str:
+        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Content Studio//Campaign Scheduler//EN"]
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    for p in schedule_rows(campaign):
+        start = datetime.fromisoformat(p["scheduled_at"].replace("Z", "+00:00")).astimezone(timezone.utc)
+        end = start + timedelta(minutes=30)
+        summary = f"Post to {p['platform'].title()}: {campaign['name']}"
+        lines += ["BEGIN:VEVENT", f"UID:{campaign['id']}-{p['platform']}@contentstudio", f"DTSTAMP:{stamp}",
+                  f"DTSTART:{start.strftime('%Y%m%dT%H%M%SZ')}", f"DTEND:{end.strftime('%Y%m%dT%H%M%SZ')}",
+                  f"SUMMARY:{ics_escape(summary)}",
+                  f"DESCRIPTION:{ics_escape(p['content'] + chr(10) + p['hashtags'])}", "END:VEVENT"]
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(lines) + "\r\n"
+
+@api_router.get("/campaigns/{campaign_id}/schedule/{format}")
+async def export_schedule(campaign_id: str, format: str):
+    campaign = await get_campaign_or_404(campaign_id)
+    slug = slugify(campaign["name"], "campaign")
+    if format == "csv":
+        return {"format": "csv", "content": schedule_csv(campaign), "filename": f"{slug}-schedule.csv"}
+    if format == "ics":
+        return {"format": "ics", "content": schedule_ics(campaign), "filename": f"{slug}-schedule.ics"}
+    raise HTTPException(status_code=400, detail="Unsupported format. Use 'csv' or 'ics'")
 
 @api_router.get("/campaigns/{campaign_id}/export/{format}")
 async def export_campaign(campaign_id: str, format: str):

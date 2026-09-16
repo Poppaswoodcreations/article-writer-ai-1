@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, ImagePlus } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -15,11 +15,11 @@ import { ExportDialog } from '@/components/ExportDialog';
 import { ImageUploadDialog } from '@/components/ImageUploadDialog';
 import { SeoFields } from '@/components/SeoFields';
 import { downloadText } from '@/lib/platforms';
+import { useImageInsert } from '@/hooks/useImageInsert';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 const REMARK_PLUGINS = [remarkGfm];
-const VALID_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
 const EXPORT_OPTIONS = [
   { format: 'markdown', label: 'Markdown', hint: 'Plain text with markdown formatting' },
   { format: 'html', label: 'HTML', hint: 'Full HTML document with SEO meta tags' },
@@ -34,10 +34,13 @@ const ArticleEditor = () => {
   const [saving, setSaving] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef(null);
   const contentTextareaRef = useRef(null);
+  const articleRef = useRef(null);
+  articleRef.current = article;
+  const { uploading, insertFiles, onDrop, onPaste } = useImageInsert(contentTextareaRef, () => articleRef.current.content, (content) => setArticle((a) => ({ ...a, content })));
 
   const patch = (fields) => setArticle((a) => ({ ...a, ...fields }));
 
@@ -84,28 +87,12 @@ const ArticleEditor = () => {
   };
 
   const handleImageUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) return toast.error('Image size must be less than 5MB');
-    if (!VALID_IMAGE_TYPES.includes(file.type)) return toast.error('Only JPEG, PNG, GIF, and WebP images are allowed');
-
-    try {
-      setUploading(true);
-      const formData = new FormData();
-      formData.append('file', file);
-      const { data } = await axios.post(`${API}/upload-image`, formData);
-      const cursor = contentTextareaRef.current?.selectionStart ?? article.content.length;
-      const imageMarkdown = `\n\n![Image](${BACKEND_URL}${data.url})\n\n`;
-      patch({ content: article.content.slice(0, cursor) + imageMarkdown + article.content.slice(cursor) });
-      toast.success('Image uploaded successfully');
-      setImageDialogOpen(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    } catch (error) {
-      toast.error('Failed to upload image');
-    } finally {
-      setUploading(false);
-    }
+    await insertFiles(event.target.files);
+    setImageDialogOpen(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  const handleDrop = (e) => { setDragging(false); onDrop(e); };
 
   if (loading) {
     return (
@@ -158,8 +145,20 @@ const ArticleEditor = () => {
                   <Label htmlFor="content" className="text-base font-medium">Article Content</Label>
                   <ImageUploadDialog open={imageDialogOpen} onOpenChange={setImageDialogOpen} uploading={uploading} fileInputRef={fileInputRef} onFileChange={handleImageUpload} />
                 </div>
-                <Textarea ref={contentTextareaRef} id="content" value={article.content} onChange={(e) => patch({ content: e.target.value })} className="mt-2 min-h-[600px] rounded-none border-input focus-visible:ring-1 focus-visible:ring-ring editor-content" style={{ fontFamily: 'Merriweather, serif', lineHeight: '1.8' }} data-testid="content-textarea" />
-                <p className="text-xs text-muted-foreground mt-2">Images will be inserted as markdown: ![Image](url)</p>
+                <div className="relative" onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={handleDrop} data-testid="content-dropzone">
+                  <Textarea ref={contentTextareaRef} id="content" value={article.content} onChange={(e) => patch({ content: e.target.value })} onPaste={onPaste}
+                    className={`mt-2 min-h-[600px] rounded-none border-input focus-visible:ring-1 focus-visible:ring-ring editor-content transition-colors ${dragging ? 'border-accent bg-accent/5' : ''}`}
+                    style={{ fontFamily: 'Merriweather, serif', lineHeight: '1.8' }} data-testid="content-textarea" />
+                  {(dragging || uploading) && (
+                    <div className="absolute inset-0 mt-2 flex items-center justify-center bg-white/70 pointer-events-none" data-testid="drop-overlay">
+                      <span className="flex items-center gap-2 text-sm font-medium bg-white border border-accent px-4 py-2">
+                        {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+                        {uploading ? 'Uploading image...' : 'Drop image to insert at cursor'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">Drag & drop or paste an image into the text to insert it at your cursor · inserted as markdown: ![Image](url)</p>
               </div>
             </TabsContent>
 

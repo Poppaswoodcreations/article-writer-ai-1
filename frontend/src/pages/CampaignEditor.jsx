@@ -8,6 +8,9 @@ import { ArrowLeft, Save, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ExportDialog } from '@/components/ExportDialog';
 import { PostCard } from '@/components/PostCard';
+import { RegeneratePopover, SchedulePicker } from '@/components/PostTools';
+import { GraphicDialog } from '@/components/GraphicDialog';
+import { SchedulePanel } from '@/components/SchedulePanel';
 import { downloadText } from '@/lib/platforms';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -25,6 +28,7 @@ const CampaignEditor = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     axios.get(`${API}/campaigns/${id}`)
@@ -33,12 +37,13 @@ const CampaignEditor = () => {
       .finally(() => setLoading(false));
   }, [id, navigate]);
 
-  const updatePost = (idx, fields) => setCampaign((c) => ({ ...c, posts: c.posts.map((p, i) => (i === idx ? { ...p, ...fields } : p)) }));
+  const updatePost = (idx, fields) => { setDirty(true); setCampaign((c) => ({ ...c, posts: c.posts.map((p, i) => (i === idx ? { ...p, ...fields } : p)) })); };
 
   const handleSave = async () => {
     try {
       setSaving(true);
       await axios.put(`${API}/campaigns/${id}`, { name: campaign.name, posts: campaign.posts, email_copy: campaign.email_copy });
+      setDirty(false);
       toast.success('Campaign saved');
     } catch {
       toast.error('Failed to save campaign');
@@ -87,9 +92,18 @@ const CampaignEditor = () => {
             <p className="text-xs text-muted-foreground mt-2">Topic: {campaign.topic}{campaign.goal ? ` · Goal: ${campaign.goal}` : ''}</p>
           </div>
 
+          <SchedulePanel campaignId={id} posts={campaign.posts} unsaved={dirty} />
+
           {campaign.posts.map((post, idx) => (
             <PostCard key={post.platform} platform={post.platform} value={post.content} hashtags={post.hashtags} slug={slug}
-              onChange={(v) => updatePost(idx, { content: v })} onHashtagsChange={(v) => updatePost(idx, { hashtags: v })} />
+              onChange={(v) => updatePost(idx, { content: v })} onHashtagsChange={(v) => updatePost(idx, { hashtags: v })}
+              tools={(
+                <>
+                  <RegeneratePopover campaignId={id} platform={post.platform} onDone={(p) => updatePost(idx, { content: p.content, hashtags: p.hashtags })} />
+                  <SchedulePicker platform={post.platform} value={post.scheduled_at} onChange={(v) => updatePost(idx, { scheduled_at: v })} />
+                  <GraphicDialog campaignId={id} platform={post.platform} post={post} imagePaths={campaign.image_paths || []} onCreated={(path) => updatePost(idx, { graphic_path: path })} />
+                </>
+              )} />
           ))}
 
           {campaign.email_copy && (
