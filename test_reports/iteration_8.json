@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 8: end-to-end test of (1) Article→Campaign promote flow and (2) Campaign PDF Deck. Backend 4/4 pass (test_iter8.py): GET /api/campaigns/12e4723b-.../deck.pdf returns 200 application/pdf with Content-Disposition attachment '<slug>-deck.pdf' (actual: 'summer-glow-handmade-candle-sale-deck.pdf'), body starts %PDF. pymupdf opens the deck: page_count == 1 cover + 2 posts + 1 email + 1 schedule = 5 pages, landscape (width>height), cover contains campaign name, at least one platform label ('FACEBOOK'/'INSTAGRAM') present on a post page, and at least one image on the graphic post page. Unknown campaign -> 404. POST /api/campaigns/generate with source_article_id=aa74874f-... returned campaign_id; GET on the new campaign has source_article_id set and posts mention 'cold brew'/article — the single LLM call for this iteration. Frontend: /editor/aa74874f header shows promote-campaign-button, clicking navigates to /campaigns/new?from_article=aa74874f-...; promote-source-banner reads 'Promoting article: How to Make Cold Brew Coffee at Home: The Complete Guide'; campaign-topic-input == article title; campaign-goal-input contains '[ARTICLE LINK]'; campaign-keywords-input == 'cold brew, home brewing'; reference-image-list shows 1 thumbnail. (Did NOT click Generate on FE — LLM already consumed by backend test as instructed.) /campaigns/12e4723b header has campaign-deck-button; click triggered a browser download 'summer-glow-handmade-candle-sale-deck.pdf' AND the 'Deck downloaded' toast. Regression: article export dialog still lists docx/pdf; dashboard loads (4 articles, 3 campaigns — one extra from the promote-generate test). Only 1 LLM call consumed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter8.py",
+    "/app/test_reports/pytest/iter8.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "exports.build_campaign_deck: schedule table sorts by scheduled_at or '9999' — works but posts without scheduled_at all collapse to '9999' and lose their original order. Consider tuple (scheduled_at is None, scheduled_at, index) for stable order.",
+    "exports._strip_emoji collapses multiple spaces via r'  +' — only two-space runs; a leading emoji + space leaves a stray leading space. Minor cosmetic.",
+    "download_campaign_deck logs 'Error building deck' as generic 500; consider surfacing the exception type to logs (currently str(e) — okay).",
+    "CampaignGenerator prefill uses article.image_paths for reference-image-list — good. Ensure server merges these into image_paths on the generated campaign posts (out of scope for this test).",
+    "PDF deck cover page: brand logo is rendered top-left when present; good, matches spec. Consider fallback text-logo when logo_path missing."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter8.py"
+  ],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100%"},
+  "test_credentials": "N/A - no auth",
+  "seed_data_creation": "One new campaign created via POST /api/campaigns/generate with source_article_id=aa74874f-... (as required to test the single LLM flow). Campaign count now 3 (was 2). Existing campaign 12e4723b unchanged.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All iter8 features (Deck PDF + Article→Campaign promote) pass end-to-end. Deck is 5 pages for campaign 12e4723b (cover + 2 posts + email + schedule), landscape, contains platform labels and post-graphic image. Promote flow prefills topic/goal/keywords/reference-images correctly and stores source_article_id on the campaign. Only 1 LLM call consumed (backend generate test). A new campaign was added to the DB from the promote test.",
+  "rca of the issue": "No issues found in this iteration."
+}
