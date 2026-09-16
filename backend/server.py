@@ -110,7 +110,7 @@ async def generate_article(input_data: ArticleCreate):
             api_key=os.environ['EMERGENT_LLM_KEY'],
             session_id=f"article-gen-{uuid.uuid4()}",
             system_message="You are an expert SEO content writer who creates high-quality, engaging articles optimized for search engines."
-        ).with_model("anthropic", "claude-4-sonnet-20250514")
+        ).with_model("anthropic", "claude-sonnet-4-6")
         
         # Create research and generation prompt
         keywords_text = f" focusing on keywords: {input_data.keywords}" if input_data.keywords else ""
