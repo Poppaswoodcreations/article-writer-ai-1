@@ -39,10 +39,11 @@ Research and create GEO-optimized, top-ranking articles with Meta Title, Meta De
 - 2026-06: Article → Campaign — "Promote as Campaign" button in editor → /campaigns/new?from_article=id (prefilled topic/goal/keywords/images); CampaignCreate.source_article_id feeds article text into the prompt
 - 2026-06: Campaign PDF Deck — GET /api/campaigns/{id}/deck.pdf (landscape reportlab: cover with brand logo, one page per post with graphic, email page, schedule table); emoji stripped in PDF/graphic text
 
+- 2026-06: Generate All Graphics — POST /api/campaigns/{id}/graphics/all (shared render_and_store helper; headline = first sentence), BulkGraphicsDialog in campaign editor header
+
 ## Backlog
-- P2: Bulk "Generate all graphics" for a campaign
 - P2: Rich-text (WYSIWYG) editor
 - P2: Client-side error boundary on dashboard
 
 ## Testing
-- Reports: /app/test_reports/iteration_1..8.json (all passing)
+- Reports: /app/test_reports/iteration_1..9.json (all passing)
