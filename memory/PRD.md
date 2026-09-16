@@ -21,12 +21,15 @@ Research and create GEO-optimized, top-ranking articles with Meta Title, Meta De
 - 2026-06: Migrated uploads from pod-local `/uploads` to Emergent object storage (deployment-safe)
 - 2026-06: Fixed frontend compile error (unused `Eye` lucide import + webpack lazy-barrel bug; craco dev rule added)
 - 2026-06: Fixed generation 500 — model id updated to `claude-sonnet-4-6`
+- 2026-06: Social media campaigns (facebook/instagram/linkedin/twitter/tiktok + email): generate, list, edit per post, copy, download per post TXT, export all txt/md/html. Endpoints /api/campaigns[...]
+- 2026-06: Reference URLs (fetched via requests+bs4, ≤5, 6k chars each) and reference images (Claude vision via ImageContent, inserted into article as markdown with alt text) on both generators (`ReferenceInputs.jsx`)
+- 2026-06: Dashboard "Content Studio" with Articles | Campaigns tabs (?tab=); article Preview tab (react-markdown); article TXT export
 
 ## Backlog
-- P1: Make "Add Image" more discoverable (header button / drag-drop / paste)
-- P1: Live markdown preview tab rendering images
+- P1: Drag-and-drop / paste images directly into editor
 - P2: Rich-text (WYSIWYG) editor, PDF/DOCX export
+- P2: Campaign scheduling / calendar view, regenerate a single post
 - P2: Client-side error boundary on dashboard
 
 ## Testing
-- Reports: /app/test_reports/iteration_1..3.json (all passing)
+- Reports: /app/test_reports/iteration_1..4.json (all passing)
