@@ -1,9 +1,9 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Download, FileText, Code, AlignLeft } from 'lucide-react';
+import { Download, FileText, Code, AlignLeft, FileType, FileDown } from 'lucide-react';
 
-const ICONS = { markdown: FileText, html: Code, txt: AlignLeft };
+const ICONS = { markdown: FileText, html: Code, txt: AlignLeft, docx: FileType, pdf: FileDown };
 
 export const ExportDialog = ({ open, onOpenChange, title, description, options, onExport, disabled, testIdPrefix = 'export', triggerLabel = 'Export' }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>

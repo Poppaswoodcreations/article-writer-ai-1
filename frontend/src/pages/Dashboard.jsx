@@ -6,9 +6,10 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { PenLine, Trash2, Sparkles, FileText, Megaphone } from 'lucide-react';
+import { PenLine, Trash2, Sparkles, FileText, Megaphone, Palette } from 'lucide-react';
 import { toast } from 'sonner';
 import { PLATFORM_META } from '@/lib/platforms';
+import { CampaignCalendar } from '@/components/CampaignCalendar';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -89,7 +90,8 @@ const CampaignCard = ({ campaign, onDelete, navigate }) => (
 const Dashboard = () => {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'campaigns' ? 'campaigns' : 'articles';
+  const tabParam = params.get('tab');
+  const tab = ['campaigns', 'calendar'].includes(tabParam) ? tabParam : 'articles';
   const [articles, setArticles] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -130,6 +132,9 @@ const Dashboard = () => {
             <p className="text-sm text-muted-foreground mt-1">SEO articles and social campaigns, written with AI</p>
           </div>
           <div className="flex items-center gap-3">
+            <Button variant="ghost" onClick={() => navigate('/brand')} className="h-10 px-3 rounded-none hover:bg-stone-100 gap-2" data-testid="brand-kit-button">
+              <Palette className="w-4 h-4" /> Brand Kit
+            </Button>
             <Button variant="outline" onClick={() => navigate('/campaigns/new')} className="h-10 px-5 rounded-none border-border hover:bg-stone-100 gap-2" data-testid="new-campaign-button">
               <Megaphone className="w-4 h-4" /> New Campaign
             </Button>
@@ -141,14 +146,17 @@ const Dashboard = () => {
       </header>
 
       <main className="container mx-auto px-6 md:px-12 py-12">
-        <Tabs value={tab} onValueChange={(v) => setParams(v === 'campaigns' ? { tab: 'campaigns' } : {})} className="mb-10">
+        <Tabs value={tab} onValueChange={(v) => setParams(v === 'articles' ? {} : { tab: v })} className="mb-10">
           <TabsList className="rounded-none h-12 bg-muted">
             <TabsTrigger value="articles" className="rounded-none px-6" data-testid="articles-tab">Articles <span className="ml-2 text-muted-foreground">({articles.length})</span></TabsTrigger>
             <TabsTrigger value="campaigns" className="rounded-none px-6" data-testid="campaigns-tab">Campaigns <span className="ml-2 text-muted-foreground">({campaigns.length})</span></TabsTrigger>
+            <TabsTrigger value="calendar" className="rounded-none px-6" data-testid="calendar-tab">Calendar</TabsTrigger>
           </TabsList>
         </Tabs>
 
-        {loading ? (
+        {tab === 'calendar' ? (
+          <CampaignCalendar />
+        ) : loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{[1, 2, 3].map((i) => <div key={i} className="h-64 bg-muted shimmer" />)}</div>
         ) : isArticles ? (
           articles.length === 0 ? (

@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { ImageIcon, Loader2, Download, Sparkles, Upload } from 'lucide-react';
+import { ImageIcon, Loader2, Download, Sparkles, Upload, Palette } from 'lucide-react';
 import { toast } from 'sonner';
 import { PLATFORM_META } from '@/lib/platforms';
 
@@ -35,6 +35,7 @@ export const GraphicDialog = ({ campaignId, platform, post, imagePaths, onCreate
   const [headline, setHeadline] = useState(firstSentence(post.content));
   const [handle, setHandle] = useState('');
   const [aiEnhance, setAiEnhance] = useState(false);
+  const [useBrand, setUseBrand] = useState(true);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
@@ -65,7 +66,7 @@ export const GraphicDialog = ({ campaignId, platform, post, imagePaths, onCreate
     if (!headline.trim()) return toast.error('Add a headline');
     try {
       setBusy(true);
-      const { data } = await axios.post(`${API}/campaigns/${campaignId}/posts/${platform}/graphic`, { image_path: selected, headline, handle: handle || null, ai_enhance: aiEnhance });
+      const { data } = await axios.post(`${API}/campaigns/${campaignId}/posts/${platform}/graphic`, { image_path: selected, headline, handle: handle || null, ai_enhance: aiEnhance, use_brand: useBrand });
       onCreated(data.path);
       toast.success('Graphic ready');
     } catch (e) {
@@ -110,8 +111,12 @@ export const GraphicDialog = ({ campaignId, platform, post, imagePaths, onCreate
             </div>
             <div>
               <Label htmlFor={`handle-${platform}`} className="text-sm font-medium">Handle / footer (optional)</Label>
-              <Input id={`handle-${platform}`} value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="@yourbrand" className="mt-1 h-10 rounded-none" data-testid={`graphic-handle-${platform}`} />
+              <Input id={`handle-${platform}`} value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="Leave empty to use Brand Kit handle" className="mt-1 h-10 rounded-none" data-testid={`graphic-handle-${platform}`} />
             </div>
+            <label className="flex items-start gap-3 border border-border px-3 py-3 cursor-pointer">
+              <Checkbox checked={useBrand} onCheckedChange={(v) => setUseBrand(!!v)} className="rounded-none mt-0.5" data-testid={`graphic-use-brand-${platform}`} />
+              <span className="text-sm"><span className="font-medium flex items-center gap-1"><Palette className="w-3.5 h-3.5" /> Apply Brand Kit</span><span className="text-xs text-muted-foreground">Your accent color, handle and logo (set up under Brand Kit)</span></span>
+            </label>
             <label className="flex items-start gap-3 border border-border px-3 py-3 cursor-pointer">
               <Checkbox checked={aiEnhance} onCheckedChange={(v) => setAiEnhance(!!v)} className="rounded-none mt-0.5" data-testid={`graphic-ai-enhance-${platform}`} />
               <span className="text-sm"><span className="font-medium flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> AI enhance</span><span className="text-xs text-muted-foreground">Restyle the photo into a polished ad visual first (uses credits, ~30s)</span></span>

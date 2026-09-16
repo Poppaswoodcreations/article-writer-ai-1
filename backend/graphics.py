@@ -60,7 +60,26 @@ def _fit_font(draw, text, max_width, max_height, start_size):
     return font, _wrap(draw, text, font, max_width)[:5], int(size * 1.2)
 
 
-def render_graphic(image_bytes: bytes, platform: str, headline: str, handle: Optional[str] = None) -> bytes:
+def _hex(color: Optional[str], fallback: tuple) -> tuple:
+    if not color:
+        return fallback
+    c = color.lstrip("#")
+    if len(c) != 6:
+        return fallback
+    return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _place_logo(base: Image.Image, logo_bytes: bytes, corner: str, margin: int) -> None:
+    logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
+    target_w = int(base.width * 0.16)
+    logo = logo.resize((target_w, max(1, round(logo.height * target_w / logo.width))), Image.LANCZOS)
+    x = margin if "left" in corner else base.width - margin - logo.width
+    y = margin if "top" in corner else base.height - margin - logo.height
+    base.paste(logo, (x, y), logo)
+
+
+def render_graphic(image_bytes: bytes, platform: str, headline: str, handle: Optional[str] = None, brand: Optional[dict] = None) -> bytes:
+    brand = brand or {}
     size = SIZES.get(platform, SIZES["facebook"])
     w, h = size
     base = _cover(Image.open(io.BytesIO(image_bytes)).convert("RGB"), size)
@@ -82,16 +101,20 @@ def render_graphic(image_bytes: bytes, platform: str, headline: str, handle: Opt
 
     bottom_pad = int(h * (0.16 if platform == "tiktok" else 0.12))
     y = h - bottom_pad - len(lines) * line_h
-    accent = BRAND.get(platform, (245, 158, 11))
+    accent = _hex(brand.get("accent_color"), BRAND.get(platform, (245, 158, 11)))
     draw.rectangle([margin, y - int(line_h * 0.6), margin + int(w * 0.09), y - int(line_h * 0.6) + max(6, h // 160)], fill=accent)
     for line in lines:
         draw.text((margin + 3, y + 3), line, font=font, fill=(0, 0, 0, 160))
         draw.text((margin, y), line, font=font, fill=(255, 255, 255))
         y += line_h
 
+    handle = handle or brand.get("handle")
     if handle:
         small = ImageFont.truetype(str(FONT_PATH), max(20, w // 45))
-        draw.text((margin, h - bottom_pad + int(line_h * 0.35)), handle, font=small, fill=(230, 230, 230))
+        draw.text((margin, h - bottom_pad + int(line_h * 0.35)), handle, font=small, fill=_hex(brand.get("primary_color"), (230, 230, 230)))
+
+    if brand.get("logo_bytes"):
+        _place_logo(base, brand["logo_bytes"], brand.get("logo_corner") or "top-right", margin)
 
     out = io.BytesIO()
     base.save(out, format="PNG", optimize=True)

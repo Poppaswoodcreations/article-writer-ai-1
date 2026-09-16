@@ -14,7 +14,7 @@ import remarkGfm from 'remark-gfm';
 import { ExportDialog } from '@/components/ExportDialog';
 import { ImageUploadDialog } from '@/components/ImageUploadDialog';
 import { SeoFields } from '@/components/SeoFields';
-import { downloadText } from '@/lib/platforms';
+import { downloadText, downloadBlob } from '@/lib/platforms';
 import { useImageInsert } from '@/hooks/useImageInsert';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -24,7 +24,10 @@ const EXPORT_OPTIONS = [
   { format: 'markdown', label: 'Markdown', hint: 'Plain text with markdown formatting' },
   { format: 'html', label: 'HTML', hint: 'Full HTML document with SEO meta tags' },
   { format: 'txt', label: 'Plain Text', hint: 'Ready to paste anywhere' },
+  { format: 'docx', label: 'Word (DOCX)', hint: 'Editable document with headings and images' },
+  { format: 'pdf', label: 'PDF', hint: 'Print-ready, images embedded' },
 ];
+const BINARY_FORMATS = ['docx', 'pdf'];
 
 const ArticleEditor = () => {
   const navigate = useNavigate();
@@ -75,8 +78,13 @@ const ArticleEditor = () => {
   const handleExport = async (format) => {
     try {
       setExporting(true);
-      const { data } = await axios.get(`${API}/articles/${id}/export/${format}`);
-      downloadText(data.content, data.filename);
+      if (BINARY_FORMATS.includes(format)) {
+        const res = await axios.get(`${API}/articles/${id}/download/${format}`, { responseType: 'blob' });
+        downloadBlob(res.data, `${article.url_slug || 'article'}.${format}`);
+      } else {
+        const { data } = await axios.get(`${API}/articles/${id}/export/${format}`);
+        downloadText(data.content, data.filename);
+      }
       toast.success(`Article exported as ${format}`);
       setExportDialogOpen(false);
     } catch (error) {

@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from dotenv import load_dotenv
 import requests
 from starlette.middleware.cors import CORSMiddleware
@@ -14,6 +14,7 @@ from datetime import datetime, timezone, timedelta
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 from bs4 import BeautifulSoup
 from graphics import render_graphic, ai_enhance
+from exports import build_docx, build_pdf
 import asyncio
 import base64
 import csv
@@ -186,6 +187,17 @@ class GraphicRequest(BaseModel):
     headline: str
     handle: Optional[str] = None
     ai_enhance: bool = False
+    use_brand: bool = True
+
+class BrandKit(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str = ""
+    handle: str = ""
+    primary_color: str = "#FFFFFF"
+    accent_color: str = "#F59E0B"
+    logo_path: Optional[str] = None
+    logo_corner: str = "top-right"
+    updated_at: Optional[str] = None
 
 class CampaignCreate(BaseModel):
     topic: str
@@ -568,7 +580,8 @@ async def create_graphic(campaign_id: str, platform: str, body: GraphicRequest):
         except Exception as e:
             logging.error(f"AI enhance failed: {str(e)}")
             raise HTTPException(status_code=502, detail="AI enhance failed, try again or use the plain overlay")
-    png = await asyncio.to_thread(render_graphic, image_bytes, platform, body.headline, body.handle)
+    brand = await load_brand_for_render() if body.use_brand else None
+    png = await asyncio.to_thread(render_graphic, image_bytes, platform, body.headline, body.handle, brand)
     path = f"{APP_NAME}/graphics/{campaign_id}/{platform}-{uuid.uuid4().hex[:8]}.png"
     result = await storage_call(put_object, path, png, "image/png", error="Error saving graphic", status=500)
     await db.files.insert_one({"id": str(uuid.uuid4()), "storage_path": result["path"], "original_filename": f"{platform}.png",
@@ -624,6 +637,82 @@ async def export_campaign(campaign_id: str, format: str):
         raise HTTPException(status_code=400, detail="Unsupported format. Use 'markdown', 'txt' or 'html'")
     render, ext = CAMPAIGN_EXPORTERS[format]
     return {"format": format, "content": render(c), "filename": f"{slugify(c['name'], 'campaign')}.{ext}"}
+
+async def load_brand_for_render() -> Optional[dict]:
+    doc = await db.settings.find_one({"key": "brand"}, {"_id": 0})
+    if not doc:
+        return None
+    brand = BrandKit(**doc).model_dump()
+    if brand.get("logo_path"):
+        try:
+            brand["logo_bytes"], _ = await asyncio.to_thread(get_object, brand["logo_path"])
+        except Exception as e:
+            logging.warning(f"Could not load brand logo: {e}")
+    return brand
+
+@api_router.get("/brand", response_model=BrandKit)
+async def get_brand():
+    doc = await db.settings.find_one({"key": "brand"}, {"_id": 0})
+    return BrandKit(**doc) if doc else BrandKit()
+
+@api_router.put("/brand", response_model=BrandKit)
+async def save_brand(brand: BrandKit):
+    for field in ("primary_color", "accent_color"):
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", getattr(brand, field)):
+            raise HTTPException(status_code=400, detail=f"{field} must be a hex color like #F59E0B")
+    if brand.logo_corner not in ("top-left", "top-right", "bottom-left", "bottom-right"):
+        raise HTTPException(status_code=400, detail="Invalid logo corner")
+    if brand.logo_path and not await db.files.find_one({"storage_path": brand.logo_path, "is_deleted": False}):
+        raise HTTPException(status_code=404, detail="Logo not found")
+    brand.updated_at = datetime.now(timezone.utc).isoformat()
+    await db.settings.update_one({"key": "brand"}, {"$set": {"key": "brand", **brand.model_dump()}}, upsert=True)
+    return brand
+
+def fetch_image_bytes(url: str) -> Optional[bytes]:
+    marker = "/api/files/"
+    try:
+        if marker in url:
+            data, _ = get_object(url.split(marker, 1)[1])
+            return data
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        return resp.content if resp.headers.get("Content-Type", "").startswith("image/") else None
+    except Exception as e:
+        logging.warning(f"Could not fetch image for export {url}: {e}")
+        return None
+
+DOC_EXPORTERS = {
+    "docx": (build_docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    "pdf": (build_pdf, "application/pdf"),
+}
+
+@api_router.get("/articles/{article_id}/download/{format}")
+async def download_article(article_id: str, format: str):
+    if format not in DOC_EXPORTERS:
+        raise HTTPException(status_code=400, detail="Unsupported format. Use 'docx' or 'pdf'")
+    article = await db.articles.find_one({"id": article_id}, {"_id": 0})
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    builder, media_type = DOC_EXPORTERS[format]
+    try:
+        data = await asyncio.to_thread(builder, article, fetch_image_bytes)
+    except Exception as e:
+        logging.error(f"Error building {format}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error building {format}")
+    filename = f"{article['url_slug'] or 'article'}.{format}"
+    return StreamingResponse(io.BytesIO(data), media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+@api_router.get("/schedule")
+async def all_scheduled_posts():
+    campaigns = await db.campaigns.find({}, {"_id": 0, "id": 1, "name": 1, "posts": 1}).to_list(1000)
+    events = []
+    for c in campaigns:
+        for p in c.get("posts", []):
+            if p.get("scheduled_at"):
+                events.append({"campaign_id": c["id"], "campaign_name": c["name"], "platform": p["platform"],
+                               "scheduled_at": p["scheduled_at"], "excerpt": p["content"][:120], "graphic_path": p.get("graphic_path")})
+    events.sort(key=lambda e: e["scheduled_at"])
+    return events
 
 @api_router.get("/articles/{article_id}/export/{format}")
 async def export_article(article_id: str, format: str):

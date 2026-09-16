@@ -6,6 +6,7 @@ import ArticleGenerator from './pages/ArticleGenerator';
 import ArticleEditor from './pages/ArticleEditor';
 import CampaignGenerator from './pages/CampaignGenerator';
 import CampaignEditor from './pages/CampaignEditor';
+import BrandSettings from './pages/BrandSettings';
 import './App.css';
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
           <Route path="/editor/:id" element={<ArticleEditor />} />
           <Route path="/campaigns/new" element={<CampaignGenerator />} />
           <Route path="/campaigns/:id" element={<CampaignEditor />} />
+          <Route path="/brand" element={<BrandSettings />} />
         </Routes>
       </BrowserRouter>
       <Toaster position="top-right" />

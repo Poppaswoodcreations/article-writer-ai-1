@@ -7,8 +7,7 @@ export const PLATFORM_META = {
   email: { label: 'Email', color: 'bg-stone-600' },
 };
 
-export const downloadText = (content, filename) => {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+export const downloadBlob = (blob, filename) => {
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -18,3 +17,5 @@ export const downloadText = (content, filename) => {
   document.body.removeChild(link);
   window.URL.revokeObjectURL(url);
 };
+
+export const downloadText = (content, filename) => downloadBlob(new Blob([content], { type: 'text/plain;charset=utf-8' }), filename);
