@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import Response
 from dotenv import load_dotenv
+import requests
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
@@ -12,7 +13,6 @@ import uuid
 from datetime import datetime, timezone
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 import asyncio
-import shutil
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -22,15 +22,46 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create uploads directory
-UPLOAD_DIR = ROOT_DIR / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
+# Emergent object storage
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+APP_NAME = "article-writer"
+storage_key = None
+
+def init_storage(force: bool = False):
+    global storage_key
+    if storage_key and not force:
+        return storage_key
+    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": os.environ.get("EMERGENT_LLM_KEY")}, timeout=30)
+    resp.raise_for_status()
+    storage_key = resp.json()["storage_key"]
+    return storage_key
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage()
+    resp = requests.put(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key, "Content-Type": content_type}, data=data, timeout=120)
+    if resp.status_code == 404:
+        key = init_storage(force=True)
+        resp = requests.put(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key, "Content-Type": content_type}, data=data, timeout=120)
+    resp.raise_for_status()
+    return resp.json()
+
+def get_object(path: str) -> tuple:
+    key = init_storage()
+    resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
 # Create the main app without a prefix
 app = FastAPI()
 
-# Mount static files for uploaded images
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+@app.on_event("startup")
+async def startup_storage():
+    try:
+        await asyncio.to_thread(init_storage)
+        logging.info("Storage initialized")
+    except Exception as e:
+        logging.error(f"Storage init failed: {e}")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -279,27 +310,45 @@ async def delete_article(article_id: str):
 
 @api_router.post("/upload-image")
 async def upload_image(file: UploadFile = File(...)):
+    allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed")
+
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image size must be less than 5MB")
+
+    ext = file.filename.split('.')[-1].lower() if '.' in file.filename else "bin"
+    path = f"{APP_NAME}/uploads/{uuid.uuid4()}.{ext}"
     try:
-        # Validate file type
-        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"]
-        if file.content_type not in allowed_types:
-            raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed")
-        
-        # Generate unique filename
-        file_extension = file.filename.split('.')[-1]
-        unique_filename = f"{uuid.uuid4()}.{file_extension}"
-        file_path = UPLOAD_DIR / unique_filename
-        
-        # Save file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        # Return URL
-        image_url = f"/uploads/{unique_filename}"
-        return {"url": image_url, "filename": unique_filename}
+        result = await asyncio.to_thread(put_object, path, data, file.content_type)
     except Exception as e:
         logging.error(f"Error uploading image: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error uploading image: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error uploading image")
+
+    await db.files.insert_one({
+        "id": str(uuid.uuid4()),
+        "storage_path": result["path"],
+        "original_filename": file.filename,
+        "content_type": file.content_type,
+        "size": result.get("size", len(data)),
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    return {"url": f"/api/files/{result['path']}", "filename": file.filename}
+
+@api_router.get("/files/{path:path}")
+async def get_file(path: str):
+    record = await db.files.find_one({"storage_path": path, "is_deleted": False})
+    if not record:
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        data, content_type = await asyncio.to_thread(get_object, path)
+    except Exception as e:
+        logging.error(f"Error fetching file: {str(e)}")
+        raise HTTPException(status_code=404, detail="File not found")
+    return Response(content=data, media_type=record.get("content_type") or content_type,
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 @api_router.get("/articles/{article_id}/export/{format}")
 async def export_article(article_id: str, format: str):

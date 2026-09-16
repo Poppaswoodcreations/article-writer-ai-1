@@ -35,6 +35,13 @@ const webpackConfig = {
       '@': path.resolve(__dirname, 'src'),
     },
     configure: (webpackConfig) => {
+      // Work around webpack 5.108+ lazy-barrel bug that drops unused named imports from side-effect-free barrels in dev
+      if (process.env.NODE_ENV !== "production") {
+        webpackConfig.module.rules.push({
+          test: /[\\/]node_modules[\\/]lucide-react[\\/]/,
+          sideEffects: true,
+        });
+      }
 
       // Disable hot reload completely if environment variable is set
       if (config.disableHotReload) {
