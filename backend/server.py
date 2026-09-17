@@ -385,6 +385,9 @@ async def delete_article(article_id: str):
     
     return {"message": "Article deleted successfully"}
 
+def file_response(data: bytes, media_type: str, filename: str) -> StreamingResponse:
+    return StreamingResponse(io.BytesIO(data), media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
 async def storage_call(fn, *args, error: str, status: int):
     try:
         return await asyncio.to_thread(fn, *args)
@@ -641,7 +644,7 @@ async def download_graphics_zip(campaign_id: str):
         return buf.getvalue()
 
     data = await storage_call(build_zip, error="Error bundling graphics", status=500)
-    return StreamingResponse(io.BytesIO(data), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{slug}-graphics.zip"'})
+    return file_response(data, "application/zip", f"{slug}-graphics.zip")
 
 @api_router.post("/campaigns/{campaign_id}/posts/{platform}/graphic")
 async def create_graphic(campaign_id: str, platform: str, body: GraphicRequest):
@@ -703,13 +706,8 @@ async def export_schedule(campaign_id: str, format: str):
 async def download_campaign_deck(campaign_id: str):
     campaign = await get_campaign_or_404(campaign_id)
     brand = await load_brand_for_render() or {}
-    try:
-        data = await asyncio.to_thread(build_campaign_deck, campaign, brand, fetch_image_bytes)
-    except Exception as e:
-        logging.error(f"Error building deck: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error building deck")
-    filename = f"{slugify(campaign['name'], 'campaign')}-deck.pdf"
-    return StreamingResponse(io.BytesIO(data), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    data = await storage_call(build_campaign_deck, campaign, brand, fetch_image_bytes, error="Error building deck", status=500)
+    return file_response(data, "application/pdf", f"{slugify(campaign['name'], 'campaign')}-deck.pdf")
 
 @api_router.get("/campaigns/{campaign_id}/export/{format}")
 async def export_campaign(campaign_id: str, format: str):
@@ -777,13 +775,8 @@ async def download_article(article_id: str, format: str):
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     builder, media_type = DOC_EXPORTERS[format]
-    try:
-        data = await asyncio.to_thread(builder, article, fetch_image_bytes)
-    except Exception as e:
-        logging.error(f"Error building {format}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error building {format}")
-    filename = f"{article['url_slug'] or 'article'}.{format}"
-    return StreamingResponse(io.BytesIO(data), media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    data = await storage_call(builder, article, fetch_image_bytes, error=f"Error building {format}", status=500)
+    return file_response(data, media_type, f"{article['url_slug'] or 'article'}.{format}")
 
 @api_router.get("/schedule")
 async def all_scheduled_posts():

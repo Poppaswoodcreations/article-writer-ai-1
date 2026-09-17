@@ -9,6 +9,7 @@ import { PLATFORM_META } from '@/lib/platforms';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const LEGEND = Object.entries(PLATFORM_META).filter(([k]) => k !== 'email');
 
 const DayCell = ({ day, month, events, selected, onSelect }) => {
   const inMonth = isSameMonth(day, month);
@@ -61,8 +62,13 @@ export const CampaignCalendar = () => {
   }, []);
 
   const days = useMemo(() => eachDayOfInterval({ start: startOfWeek(startOfMonth(month), { weekStartsOn: 1 }), end: endOfWeek(endOfMonth(month), { weekStartsOn: 1 }) }), [month]);
-  const eventsOn = (day) => events.filter((e) => isSameDay(new Date(e.scheduled_at), day));
-  const monthCount = events.filter((e) => isSameMonth(new Date(e.scheduled_at), month)).length;
+  const eventsByDay = useMemo(() => {
+    const map = {};
+    events.forEach((e) => { const key = format(new Date(e.scheduled_at), 'yyyy-MM-dd'); (map[key] ||= []).push(e); });
+    return map;
+  }, [events]);
+  const eventsOn = (day) => eventsByDay[format(day, 'yyyy-MM-dd')] || [];
+  const monthCount = useMemo(() => events.filter((e) => isSameMonth(new Date(e.scheduled_at), month)).length, [events, month]);
 
   return (
     <div className="grid lg:grid-cols-[1fr_320px] gap-6" data-testid="campaign-calendar">
@@ -84,7 +90,7 @@ export const CampaignCalendar = () => {
           {days.map((day) => <DayCell key={day.toISOString()} day={day} month={month} events={eventsOn(day)} selected={selected && isSameDay(day, selected)} onSelect={setSelected} />)}
         </div>
         <div className="flex flex-wrap gap-4 mt-4">
-          {Object.entries(PLATFORM_META).filter(([k]) => k !== 'email').map(([k, m]) => <span key={k} className="flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`w-2.5 h-2.5 ${m.color}`} />{m.label}</span>)}
+          {LEGEND.map(([k, m]) => <span key={k} className="flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`w-2.5 h-2.5 ${m.color}`} />{m.label}</span>)}
         </div>
       </div>
       <div>

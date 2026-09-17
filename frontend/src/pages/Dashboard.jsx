@@ -87,6 +87,33 @@ const CampaignCard = ({ campaign, onDelete, navigate }) => (
   </Card>
 );
 
+const LoadingGrid = () => (
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{[1, 2, 3].map((i) => <div key={i} className="h-64 bg-muted shimmer" />)}</div>
+);
+
+const DashboardBody = ({ tab, loading, articles, campaigns, navigate, onDelete }) => {
+  if (tab === 'calendar') return <CampaignCalendar />;
+  if (loading) return <LoadingGrid />;
+  if (tab === 'articles') {
+    if (articles.length === 0) {
+      return <EmptyState icon={FileText} title="No articles yet" text="Generate SEO-optimized articles from a topic, reference URLs and images." cta="Create Your First Article" onClick={() => navigate('/generate')} testId="empty-state" />;
+    }
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="articles-grid">
+        {articles.map((a) => <ArticleCard key={a.id} article={a} navigate={navigate} onDelete={(id) => onDelete('articles', id)} />)}
+      </div>
+    );
+  }
+  if (campaigns.length === 0) {
+    return <EmptyState icon={Megaphone} title="No campaigns yet" text="Write Facebook, Instagram, LinkedIn, X and TikTok posts plus an email in one go." cta="Create Your First Campaign" onClick={() => navigate('/campaigns/new')} testId="campaigns-empty-state" />;
+  }
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="campaigns-grid">
+      {campaigns.map((c) => <CampaignCard key={c.id} campaign={c} navigate={navigate} onDelete={(id) => onDelete('campaigns', id)} />)}
+    </div>
+  );
+};
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -121,8 +148,6 @@ const Dashboard = () => {
     }
   };
 
-  const isArticles = tab === 'articles';
-
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-white/80 backdrop-blur-md sticky top-0 z-50">
@@ -154,25 +179,7 @@ const Dashboard = () => {
           </TabsList>
         </Tabs>
 
-        {tab === 'calendar' ? (
-          <CampaignCalendar />
-        ) : loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{[1, 2, 3].map((i) => <div key={i} className="h-64 bg-muted shimmer" />)}</div>
-        ) : isArticles ? (
-          articles.length === 0 ? (
-            <EmptyState icon={FileText} title="No articles yet" text="Generate SEO-optimized articles from a topic, reference URLs and images." cta="Create Your First Article" onClick={() => navigate('/generate')} testId="empty-state" />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="articles-grid">
-              {articles.map((a) => <ArticleCard key={a.id} article={a} navigate={navigate} onDelete={(id) => remove('articles', id)} />)}
-            </div>
-          )
-        ) : campaigns.length === 0 ? (
-          <EmptyState icon={Megaphone} title="No campaigns yet" text="Write Facebook, Instagram, LinkedIn, X and TikTok posts plus an email in one go." cta="Create Your First Campaign" onClick={() => navigate('/campaigns/new')} testId="campaigns-empty-state" />
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="campaigns-grid">
-            {campaigns.map((c) => <CampaignCard key={c.id} campaign={c} navigate={navigate} onDelete={(id) => remove('campaigns', id)} />)}
-          </div>
-        )}
+        <DashboardBody tab={tab} loading={loading} articles={articles} campaigns={campaigns} navigate={navigate} onDelete={remove} />
       </main>
     </div>
   );
