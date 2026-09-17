@@ -21,6 +21,7 @@ import csv
 import io
 import json
 import re
+import zipfile
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -622,6 +623,25 @@ async def create_all_graphics(campaign_id: str, body: BulkGraphicRequest):
             failed.append(post["platform"])
     await save_posts(campaign_id, campaign["posts"])
     return {"created": created, "failed": failed, "posts": campaign["posts"]}
+
+@api_router.get("/campaigns/{campaign_id}/graphics.zip")
+async def download_graphics_zip(campaign_id: str):
+    campaign = await get_campaign_or_404(campaign_id)
+    posts = [p for p in campaign["posts"] if p.get("graphic_path")]
+    if not posts:
+        raise HTTPException(status_code=404, detail="No graphics created yet")
+    slug = slugify(campaign["name"], "campaign")
+
+    def build_zip() -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for p in posts:
+                data, _ = get_object(p["graphic_path"])
+                zf.writestr(f"{slug}/{p['platform']}.png", data)
+        return buf.getvalue()
+
+    data = await storage_call(build_zip, error="Error bundling graphics", status=500)
+    return StreamingResponse(io.BytesIO(data), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{slug}-graphics.zip"'})
 
 @api_router.post("/campaigns/{campaign_id}/posts/{platform}/graphic")
 async def create_graphic(campaign_id: str, platform: str, body: GraphicRequest):

@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Save, Loader2, Presentation } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Presentation, FolderDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { ExportDialog } from '@/components/ExportDialog';
 import { PostCard } from '@/components/PostCard';
@@ -30,6 +30,7 @@ const CampaignEditor = () => {
   const [saving, setSaving] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [deckBusy, setDeckBusy] = useState(false);
+  const [zipBusy, setZipBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -78,9 +79,23 @@ const CampaignEditor = () => {
     }
   };
 
+  const downloadZip = async () => {
+    try {
+      setZipBusy(true);
+      const res = await axios.get(`${API}/campaigns/${id}/graphics.zip`, { responseType: 'blob' });
+      downloadBlob(res.data, `${slugify(campaign.name)}-graphics.zip`);
+      toast.success('Graphics downloaded');
+    } catch {
+      toast.error('No graphics to download yet');
+    } finally {
+      setZipBusy(false);
+    }
+  };
+
   if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>;
   if (!campaign) return null;
   const slug = slugify(campaign.name);
+  const graphicCount = campaign.posts.filter((p) => p.graphic_path).length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -92,6 +107,9 @@ const CampaignEditor = () => {
           </div>
           <div className="flex items-center gap-3">
             <BulkGraphicsDialog campaignId={id} posts={campaign.posts} imagePaths={campaign.image_paths || []} onDone={(posts) => setCampaign((c) => ({ ...c, posts }))} />
+            <Button variant="outline" onClick={downloadZip} disabled={zipBusy || !graphicCount} title={graphicCount ? `${graphicCount} graphics` : 'Create graphics first'} className="h-10 px-4 rounded-none border-border hover:bg-stone-100 gap-2" data-testid="graphics-zip-button">
+              {zipBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderDown className="w-4 h-4" />} Graphics ZIP{graphicCount ? ` (${graphicCount})` : ''}
+            </Button>
             <Button variant="outline" onClick={downloadDeck} disabled={deckBusy} className="h-10 px-4 rounded-none border-border hover:bg-stone-100 gap-2" data-testid="campaign-deck-button">
               {deckBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Presentation className="w-4 h-4" />} Deck (PDF)
             </Button>
