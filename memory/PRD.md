@@ -41,9 +41,12 @@ Research and create GEO-optimized, top-ranking articles with Meta Title, Meta De
 
 - 2026-06: Generate All Graphics — POST /api/campaigns/{id}/graphics/all (shared render_and_store helper; headline = first sentence), BulkGraphicsDialog in campaign editor header
 
+- 2026-06: Graphics ZIP — GET /api/campaigns/{id}/graphics.zip; header button with count
+- 2026-06: Code-review refactor #2: exports.py block handlers + deck page builders; file_response/storage_call for downloads; frontend hooks useArticle/useCampaign, components ArticleHeader/ContentEditor/CampaignHeader/ImagePicker/OptionToggle; DashboardBody; memoized calendar
+
 ## Backlog
 - P2: Rich-text (WYSIWYG) editor
 - P2: Client-side error boundary on dashboard
 
 ## Testing
-- Reports: /app/test_reports/iteration_1..9.json (all passing)
+- Reports: /app/test_reports/iteration_1..11.json (all passing)

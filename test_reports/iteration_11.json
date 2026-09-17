@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend regression testing after refactor. All requested Playwright flows pass: ArticleEditor header/export/save-persist/add-image dialog/drop image/preview & SEO tabs; CampaignEditor header buttons (bulk, graphics-zip with count '(2)', deck, export, save)/downloads with toasts/save-persist/post cards with tools; GraphicDialog (Facebook) upload, prefilled headline, brand toggle on, AI enhance off, generate creates image and downloads PNG; BulkGraphicsDialog upload, use-brand + overwrite toggles, generate -> '2 graphics created' toast and dialog closes; Schedule popover -> calendar + time -> schedule-item-instagram appears in panel and persists after reload; Dashboard tabs switch (URL ?tab=), calendar renders with dot, clicking day shows details; Brand Kit navigation shows brand-preview.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ImageUploadDialog file input has class 'hidden' (display:none). Playwright's default wait_for_selector(visible) fails; tests must use set_input_files directly. Not a bug but worth a data-attribute or aria-hidden note.",
+    "useCampaign.setLoading is called in finally even on error path where onMissing may unmount — currently fine, but ensure component-unmounted safety.",
+    "useArticle: after save, article state is not refreshed from server; local optimistic state is trusted. OK for now."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100%"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "None. Used existing article aa74874f-... and campaign 12e4723b-...; all state changes reverted after test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All frontend regression paths in review_request pass on iteration 11. Key testids validated: promote-campaign-button, export-{markdown,html,txt,docx,pdf}-button, save-button, add-image-button/image-upload-input, content-textarea drop, preview-tab/article-preview, seo-tab/meta-title-input, campaign header buttons incl. graphics-zip-button showing '(2)', campaign-export-txt-button, campaign-save-button, post-card-{facebook,instagram,email} with copy/download/regenerate/schedule/graphic, graphic-image-choices/graphic-upload-input/graphic-headline-facebook/graphic-use-brand-facebook/graphic-generate-facebook/graphic-image-facebook/graphic-download-facebook, bulk-image-choices/bulk-upload-input/bulk-use-brand/bulk-overwrite/bulk-generate-button (toast '2 graphics created'), schedule-calendar-instagram+schedule-time-instagram+schedule-item-instagram persists, dashboard tabs URL ?tab=campaigns|calendar, campaign-calendar+calendar-dot+calendar-day-details, brand-kit-button -> /brand -> brand-preview.",
+  "rca of the issue": "N/A"
+}
